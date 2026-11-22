@@ -1,6 +1,7 @@
 import { cloneElement, isValidElement, memo, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigationType } from "react-router-dom";
 import gsap from "gsap";
+import SiteFooter from "@/components/SiteFooter";
 
 const ENTER_OPACITY = 0.94;
 const EXIT_OPACITY = 0.94;
@@ -91,9 +92,19 @@ function renderPage(children, location) {
 
 const PageLayer = memo(
   function PageLayer({ location, className, suspended, children }) {
+    const chat = location.pathname.endsWith("/chat");
+    const page = renderPage(children, location);
+
     return (
       <div className={className} data-pathname={location.pathname} inert={suspended ? true : undefined} aria-hidden={suspended ? true : undefined}>
-        {renderPage(children, location)}
+        {chat ? (
+          page
+        ) : (
+          <div className="flex min-h-full flex-col">
+            <div className="flex-1">{page}</div>
+            <SiteFooter />
+          </div>
+        )}
       </div>
     );
   },
