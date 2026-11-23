@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { CATEGORIES, PRIORITIES, PROJECTS, uid } from "@/lib/tickets";
+import { CATEGORIES, CHANNELS, PRIORITIES, PROJECTS, needsReference, uid } from "@/lib/tickets";
 import { useTickets } from "@/components/TicketsProvider";
 import { IconChat, IconPlus, IconTickets, PageFrame, fieldClass, ghostBtn, primaryBtn } from "@/components/ui";
 
 const IMAGE_LIMIT = 4;
 const IMAGE_BYTES = 1.5 * 1024 * 1024;
 const VIDEO_BYTES = 2 * 1024 * 1024;
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const POINTS = [
   [IconPlus, "It joins your list", "The new ticket shows up with the others, starting as open."],
@@ -19,18 +20,31 @@ export default function NewTicketForm() {
   const navigate = useNavigate();
   const [subject, setSubject] = useState("");
   const [project, setProject] = useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [channel, setChannel] = useState(CHANNELS[0].id);
+  const [reference, setReference] = useState("");
   const [location, setLocation] = useState("");
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [priority, setPriority] = useState("Normal");
   const [description, setDescription] = useState("");
+  const [expected, setExpected] = useState("");
   const [steps, setSteps] = useState("");
   const [attachments, setAttachments] = useState([]);
   const [errors, setErrors] = useState({});
   const subjectRef = useRef(null);
   const projectRef = useRef(null);
+  const nameRef = useRef(null);
+  const emailRef = useRef(null);
+  const phoneRef = useRef(null);
+  const referenceRef = useRef(null);
+  const descriptionRef = useRef(null);
 
   useEffect(() => {
-    subjectRef.current?.focus();
+    // The page is still sliding in. Scrolling the focused field into view
+    // fights that motion and makes the bar jump.
+    subjectRef.current?.focus({ preventScroll: true });
   }, []);
 
   async function addFiles(event) {
@@ -81,18 +95,41 @@ export default function NewTicketForm() {
     const next = {};
     if (subject.trim().length < 3) next.subject = "Add a short subject.";
     if (project.trim().length < 2) next.project = "Name the project this is about.";
+    if (name.trim().length < 2) next.name = "Add your name.";
+    if (!EMAIL.test(email.trim())) next.email = "Add a valid email.";
+    if (channel === "call" && phone.trim().length < 7) next.phone = "Add a phone number so we can call.";
+    if (needsReference(category) && reference.trim().length < 2) next.reference = "Add the invoice, order, or account.";
     if (description.trim().length < 8) next.description = "Tell us a little about the issue.";
     setErrors(next);
-    if (next.subject) {
-      subjectRef.current?.focus();
+    const focus = [
+      ["subject", subjectRef],
+      ["project", projectRef],
+      ["name", nameRef],
+      ["email", emailRef],
+      ["phone", phoneRef],
+      ["reference", referenceRef],
+      ["description", descriptionRef],
+    ].find(([key]) => next[key]);
+    if (focus) {
+      focus[1].current?.focus();
       return;
     }
-    if (next.project) {
-      projectRef.current?.focus();
-      return;
-    }
-    if (Object.keys(next).length) return;
-    const ticket = createTicket({ subject, project, location, steps, category, priority, description, attachments });
+    const ticket = createTicket({
+      subject,
+      project,
+      name,
+      email,
+      phone,
+      channel,
+      reference,
+      location,
+      steps,
+      category,
+      priority,
+      description,
+      expected,
+      attachments,
+    });
     navigate(`/tickets/${ticket.id}`);
   }
 
@@ -155,6 +192,94 @@ export default function NewTicketForm() {
             {errors.project ? <p className="mt-1.5 text-xs text-ink">{errors.project}</p> : null}
           </div>
 
+          <label className="text-sm font-medium lg:pt-2.5" htmlFor="name">
+            Name
+          </label>
+          <div>
+            <input
+              id="name"
+              data-tour="field-contact"
+              ref={nameRef}
+              value={name}
+              maxLength={80}
+              autoComplete="name"
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Your name"
+              className={`${fieldClass} ${errors.name ? "border-ink ring-4 ring-ink/10" : ""}`}
+            />
+            {errors.name ? <p className="mt-1.5 text-xs text-ink">{errors.name}</p> : null}
+          </div>
+
+          <label className="text-sm font-medium lg:pt-2.5" htmlFor="email">
+            Email
+          </label>
+          <div>
+            <input
+              id="email"
+              ref={emailRef}
+              type="email"
+              value={email}
+              maxLength={120}
+              autoComplete="email"
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@company.com"
+              className={`${fieldClass} ${errors.email ? "border-ink ring-4 ring-ink/10" : ""}`}
+            />
+            {errors.email ? <p className="mt-1.5 text-xs text-ink">{errors.email}</p> : null}
+          </div>
+
+          <label className="text-sm font-medium lg:pt-2.5" htmlFor="phone">
+            Phone
+          </label>
+          <div>
+            <input
+              id="phone"
+              ref={phoneRef}
+              type="tel"
+              value={phone}
+              maxLength={40}
+              autoComplete="tel"
+              onChange={(event) => setPhone(event.target.value)}
+              placeholder={channel === "call" ? "Number for the callback" : "Optional"}
+              className={`${fieldClass} ${errors.phone ? "border-ink ring-4 ring-ink/10" : ""}`}
+            />
+            {errors.phone ? <p className="mt-1.5 text-xs text-ink">{errors.phone}</p> : null}
+          </div>
+
+          <p className="text-sm font-medium lg:pt-2">Reply by</p>
+          <div data-tour="field-channel" role="radiogroup" aria-label="Reply by" className="flex flex-wrap gap-2">
+            {CHANNELS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="radio"
+                aria-checked={channel === item.id}
+                onClick={() => setChannel(item.id)}
+                className={`inline-flex items-center rounded-full px-3 py-1.5 text-sm transition ${channel === item.id ? "bg-ink text-paper" : "bg-mist text-ink hover:bg-ink/[0.06]"}`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          <label className="text-sm font-medium lg:pt-2.5" htmlFor="reference">
+            Reference
+          </label>
+          <div>
+            <input
+              id="reference"
+              data-tour="field-reference"
+              ref={referenceRef}
+              value={reference}
+              maxLength={80}
+              onChange={(event) => setReference(event.target.value)}
+              placeholder="Invoice, order, or account"
+              className={`${fieldClass} ${errors.reference ? "border-ink ring-4 ring-ink/10" : ""}`}
+            />
+            <p className="mt-1.5 text-xs leading-5 text-mute">Needed for billing, account, and order requests.</p>
+            {errors.reference ? <p className="mt-1.5 text-xs text-ink">{errors.reference}</p> : null}
+          </div>
+
           <label className="text-sm font-medium lg:pt-2.5" htmlFor="location">
             Where it happens
           </label>
@@ -208,6 +333,7 @@ export default function NewTicketForm() {
             <textarea
               id="description"
               data-tour="field-description"
+              ref={descriptionRef}
               value={description}
               maxLength={2000}
               rows={6}
@@ -216,6 +342,22 @@ export default function NewTicketForm() {
               className={`${fieldClass} resize-none ${errors.description ? "border-ink ring-4 ring-ink/10" : ""}`}
             />
             {errors.description ? <p className="mt-1.5 text-xs text-ink">{errors.description}</p> : null}
+          </div>
+
+          <label className="text-sm font-medium lg:pt-2.5" htmlFor="expected">
+            What should have happened?
+          </label>
+          <div>
+            <textarea
+              id="expected"
+              data-tour="field-expected"
+              value={expected}
+              maxLength={1000}
+              rows={3}
+              onChange={(event) => setExpected(event.target.value)}
+              placeholder="Optional. What you expected instead."
+              className={`${fieldClass} resize-none`}
+            />
           </div>
 
           <label className="text-sm font-medium lg:pt-2.5" htmlFor="steps">

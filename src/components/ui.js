@@ -19,7 +19,7 @@ export const FILTERS = [
 export const pagePad = "px-6 sm:px-10 lg:px-20";
 
 export function PageFrame({ children }) {
-  return <div className={`flex w-full flex-col ${pagePad} py-8 lg:py-10`}>{children}</div>;
+  return <div className={`flex w-full flex-col ${pagePad} pb-8 pt-24 lg:pb-10 lg:pt-28`}>{children}</div>;
 }
 
 export function PageSkeleton() {
@@ -40,7 +40,7 @@ export function MissingTicket() {
       <div className="mx-auto max-w-lg py-20 text-center">
         <p className="text-xs uppercase tracking-[0.22em] text-mute">Ticket</p>
         <h1 className="mt-3 font-display text-4xl tracking-tight text-balance">This ticket isn&apos;t on your desk.</h1>
-        <p className="mt-3 text-sm leading-6 text-mute">The number may be wrong, or the sample tickets were restored.</p>
+        <p className="mt-3 text-sm leading-7 text-mute">The number may be wrong, or the sample tickets were restored.</p>
         <Link to="/tickets" className={`${primaryBtn} mt-6`}>
           Back to tickets
         </Link>
@@ -70,7 +70,7 @@ export function StatusRail({ status }) {
                   state === "todo" ? "border-2 border-ink/25 bg-paper" : "bg-ink"
                 } ${state === "current" ? "ring-4 ring-ink/15" : ""}`}
               />
-              <span className={`mt-1.5 px-1 text-center text-[11px] leading-4 ${state === "todo" ? "text-mute" : "font-medium text-ink"}`}>
+              <span className={`mt-1.5 px-1 text-center text-xs leading-4 ${state === "todo" ? "text-mute" : "font-medium text-ink"}`}>
                 {step.label}
               </span>
             </li>

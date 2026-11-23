@@ -107,12 +107,31 @@ const ticketSteps = [
 const newTicketSteps = [
   step("[data-tour='field-subject']", "Subject", "A short line. This is the title you will see in the list.", { side: "bottom", align: "start" }),
   step("[data-tour='field-project']", "Project", "Which project this is about. Suggestions appear as you type.", { side: "bottom", align: "start" }),
+  step(
+    "[data-tour='field-contact']",
+    "Who to reach",
+    "Your name and email. Add a phone number if you want a callback.",
+    { side: "bottom", align: "start" },
+  ),
+  step("[data-tour='field-channel']", "Reply by", "Chat, email, or a call. A call needs a phone number.", { side: "bottom", align: "start" }),
+  step(
+    "[data-tour='field-reference']",
+    "Reference",
+    "Invoice, order, or account. Required for billing, account, and order requests.",
+    { side: "bottom", align: "start" },
+  ),
   step("[data-tour='field-category']", "Category", "Pick the closest fit so the desk can route it.", { side: "bottom", align: "start" }),
   step("[data-tour='field-priority']", "Priority", "Normal is the usual choice. High is for something that is blocking you.", { side: "bottom", align: "start" }),
   step(
     "[data-tour='field-description']",
     "What happened",
-    "A few sentences is enough. Say what you expected, and what you got instead.",
+    "A few sentences is enough. Say what happened, and what you need.",
+    { side: "top", align: "start" },
+  ),
+  step(
+    "[data-tour='field-expected']",
+    "What should have happened",
+    "Optional. What you expected instead of what you got.",
     { side: "top", align: "start" },
   ),
   step("[data-tour='field-steps']", "Steps", "Optional. What you did just before this happened, if it is a bug.", { side: "top", align: "start" }),
@@ -136,7 +155,7 @@ const detailSteps = [
   step(
     "[data-tour='ticket-request']",
     "Your request",
-    "The description you sent. Steps and files show here when you added them.",
+    "The description you sent. The expected outcome, steps, and files show here when you added them.",
     { side: "top", align: "start" },
   ),
   step(

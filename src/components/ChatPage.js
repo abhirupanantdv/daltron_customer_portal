@@ -16,13 +16,13 @@ export default function ChatPage() {
 
   return (
     <div className="cove-in flex h-full min-h-0 flex-col bg-transparent">
-      <div className={`${pagePad} shrink-0 border-b border-ink/10 py-4`}>
+      <div className={`${pagePad} shrink-0 border-b border-ink/10 pb-4 pt-20`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link to={`/tickets/${ticket.id}`} data-tour="chat-back" className="inline-flex items-center gap-1.5 text-sm text-mute transition hover:text-ink">
             <IconBack className="size-4" />
             Ticket status
           </Link>
-          <p className="font-mono text-[11px] text-mute">{ticket.id}</p>
+          <p className="font-mono text-xs text-mute">{ticket.id}</p>
         </div>
         <h1 className="mt-3 font-display text-2xl leading-tight tracking-tight text-balance sm:text-3xl">{ticket.subject}</h1>
         <p className="mt-1 text-sm text-mute">
@@ -129,7 +129,7 @@ function Conversation({ ticket, now, typing, onSend }) {
             <IconSend className="size-5" />
           </button>
         </div>
-        <p className="mt-2 hidden text-[11px] text-mute md:block">Enter to send · Shift+Enter for a new line</p>
+        <p className="mt-2 hidden text-xs text-mute md:block">Enter to send · Shift+Enter for a new line</p>
       </form>
     </section>
   );
@@ -144,7 +144,7 @@ function Message({ message, now }) {
     <div className={`flex items-end gap-2 ${mine ? "flex-row-reverse" : ""}`}>
       {mine ? null : <Avatar />}
       <div className={`flex max-w-[min(40rem,85%)] flex-col ${mine ? "items-end" : "items-start"}`}>
-        <span className="mb-1 px-1 text-[11px] text-mute">
+        <span className="mb-1 px-1 text-xs text-mute">
           {mine ? "You" : "Alex"} · {formatClock(message.at, now)}
         </span>
         <p className={`whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${mine ? "rounded-br-md bg-ink text-paper" : "rounded-bl-md bg-mist text-ink"}`}>
@@ -156,5 +156,5 @@ function Message({ message, now }) {
 }
 
 function Avatar() {
-  return <span className="grid size-7 shrink-0 place-items-center rounded-full bg-ink text-[11px] font-medium text-paper">A</span>;
+  return <span className="grid size-7 shrink-0 place-items-center rounded-full bg-ink text-xs font-medium text-paper">A</span>;
 }

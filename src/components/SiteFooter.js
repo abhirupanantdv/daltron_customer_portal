@@ -19,7 +19,7 @@ export default function SiteFooter() {
             <Link to="/" className="inline-flex outline-none focus-visible:opacity-80" aria-label="AnantDV support">
               <Logo className="h-9 w-auto" />
             </Link>
-            <p className="mt-4 max-w-sm text-sm leading-6 text-white/70">
+            <p className="mt-4 max-w-sm text-sm leading-7 text-white/70">
               Open a support ticket, follow every request you created, and reach the desk when you want to.
             </p>
           </div>
@@ -35,7 +35,7 @@ export default function SiteFooter() {
 
           <div className="text-sm">
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-white/45">Desk</p>
-            <p className="mt-2.5 leading-6 text-white/70">
+            <p className="mt-2.5 leading-7 text-white/70">
               Monday–Friday
               <br />
               9:00–18:00 IST

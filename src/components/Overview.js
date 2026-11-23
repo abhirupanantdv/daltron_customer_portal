@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { byUpdated } from "@/lib/tickets";
+import { CHANNELS, byUpdated } from "@/lib/tickets";
 import { useNavSearch } from "@/components/AppShell";
 import { useTickets } from "@/components/TicketsProvider";
+// import HomeFaq from "@/components/HomeFaq";
 import { IconChat, IconMail, IconPhone, IconPlus, IconSearch, IconTickets, ghostBtn, pagePad, primaryBtn } from "@/components/ui";
 
-const CHANNELS = [
-  { id: "chat", label: "Chat", icon: IconChat },
-  { id: "email", label: "Email", icon: IconMail },
-  { id: "call", label: "Call", icon: IconPhone },
-];
+const CHANNEL_ICONS = {
+  chat: IconChat,
+  email: IconMail,
+  call: IconPhone,
+};
 
 const REACH = [
   { icon: IconMail, label: "Email", value: "support@anantdv.com", href: "mailto:support@anantdv.com" },
@@ -134,13 +135,15 @@ export default function Overview() {
         </div>
       </section>
 
+      {/* <HomeFaq /> */}
+
       <section className="w-full border-t border-ink/10">
         <div className={`${pagePad} py-14 sm:py-16`}>
           <h2 className="text-center font-display text-4xl tracking-tight sm:text-5xl">Connect with us</h2>
           <div data-tour="channels" className="mt-8 flex items-end justify-center gap-6 border-b border-ink/10 sm:gap-10" role="tablist" aria-label="Contact options">
             {CHANNELS.map((item) => {
               const on = channel === item.id;
-              const Icon = item.icon;
+              const Icon = CHANNEL_ICONS[item.id];
               return (
                 <button
                   key={item.id}

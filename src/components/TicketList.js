@@ -62,7 +62,7 @@ export default function TicketList() {
             </button>
           ) : null}
         </div>
-        <div data-tour="ticket-filters" className="flex gap-1 overflow-x-auto" role="group" aria-label="Filter by status">
+        <div data-tour="ticket-filters" className="flex gap-1 overflow-x-auto overflow-y-hidden" role="group" aria-label="Filter by status">
           {FILTERS.map(([id, label]) => {
             const count = tickets.filter((ticket) => matchesFilter(ticket, id, query)).length;
             const on = filter === id;
@@ -122,10 +122,10 @@ function TicketRow({ ticket, now }) {
         <IconTickets className="mt-0.5 size-4 shrink-0 text-mute" />
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline justify-between gap-4">
-            <span className="font-mono text-[11px] text-mute">{ticket.id}</span>
-            <span className="shrink-0 text-[11px] text-mute">{formatWhen(ticket.updatedAt, now)}</span>
+            <span className="font-mono text-xs text-mute">{ticket.id}</span>
+            <span className="shrink-0 text-xs text-mute">{formatWhen(ticket.updatedAt, now)}</span>
           </span>
-          <span className="mt-1 block truncate font-medium">{ticket.subject}</span>
+          <span className="mt-1 block truncate text-lg font-medium">{ticket.subject}</span>
           <span className="mt-1 block text-sm text-mute">
             {ticket.project ? `${ticket.project} · ` : ""}
             {ticket.category}

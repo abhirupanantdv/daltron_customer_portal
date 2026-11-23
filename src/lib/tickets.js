@@ -1,6 +1,21 @@
 export const CATEGORIES = ["Billing", "Account", "Technical", "Orders", "Other"];
 export const PRIORITIES = ["Low", "Normal", "High"];
 export const PROJECTS = ["AnantDV Web", "AnantDV Mobile", "Billing portal", "Admin workspace"];
+export const CHANNELS = [
+  { id: "chat", label: "Chat" },
+  { id: "email", label: "Email" },
+  { id: "call", label: "Call" },
+];
+
+const REFERENCE_CATEGORIES = new Set(["Billing", "Account", "Orders"]);
+
+export function needsReference(category) {
+  return REFERENCE_CATEGORIES.has(category);
+}
+
+export function channelLabel(id) {
+  return CHANNELS.find((item) => item.id === id)?.label ?? "";
+}
 
 export const STEPS = [
   { id: "open", label: "Open", note: "We have this, and it's in the queue." },
@@ -19,6 +34,12 @@ export const SEED = [
     category: "Billing",
     priority: "High",
     status: "in_progress",
+    name: "Sam Patel",
+    email: "sam@acme.studio",
+    phone: "",
+    channel: "email",
+    reference: "INV-2026-11",
+    expected: "The November invoice should be $190, matching the annual plan.",
     createdAt: "2026-11-19T10:24:00.000Z",
     updatedAt: "2026-11-20T08:40:00.000Z",
     description:
@@ -45,6 +66,12 @@ export const SEED = [
     category: "Account",
     priority: "Normal",
     status: "waiting",
+    name: "Sam Patel",
+    email: "sam@acme.studio",
+    phone: "",
+    channel: "email",
+    reference: "",
+    expected: "",
     createdAt: "2026-11-18T16:05:00.000Z",
     updatedAt: "2026-11-20T06:15:00.000Z",
     description:
@@ -71,6 +98,12 @@ export const SEED = [
     category: "Technical",
     priority: "Normal",
     status: "open",
+    name: "Sam Patel",
+    email: "sam@acme.studio",
+    phone: "",
+    channel: "chat",
+    reference: "",
+    expected: "",
     createdAt: "2026-11-20T04:05:00.000Z",
     updatedAt: "2026-11-20T04:05:00.000Z",
     description:
@@ -91,6 +124,12 @@ export const SEED = [
     category: "Account",
     priority: "Low",
     status: "resolved",
+    name: "Sam Patel",
+    email: "sam@acme.studio",
+    phone: "",
+    channel: "email",
+    reference: "jordan@acme.studio",
+    expected: "",
     createdAt: "2026-11-12T11:12:00.000Z",
     updatedAt: "2026-11-13T09:30:00.000Z",
     description: "Please add jordan@acme.studio as an admin on our workspace.",
@@ -175,7 +214,22 @@ export function byUpdated(a, b) {
 export function matchesFilter(ticket, filter, query) {
   const q = query.trim().toLowerCase();
   if (q) {
-    const hay = [ticket.id, ticket.subject, ticket.project, ticket.category, ticket.priority, ticket.description, ticket.location, ticket.steps]
+    const hay = [
+      ticket.id,
+      ticket.subject,
+      ticket.project,
+      ticket.category,
+      ticket.priority,
+      ticket.description,
+      ticket.location,
+      ticket.steps,
+      ticket.name,
+      ticket.email,
+      ticket.phone,
+      ticket.reference,
+      ticket.expected,
+      channelLabel(ticket.channel),
+    ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();

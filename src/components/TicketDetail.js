@@ -1,5 +1,5 @@
 import { Link, useParams } from "react-router-dom";
-import { STEPS, formatWhen } from "@/lib/tickets";
+import { STEPS, channelLabel, formatWhen } from "@/lib/tickets";
 import { useTickets } from "@/components/TicketsProvider";
 import { IconBack, IconChat, MissingTicket, PageFrame, PageSkeleton, StatusRail, formatDay, ghostBtn, primaryBtn } from "@/components/ui";
 
@@ -40,6 +40,13 @@ export default function TicketDetail() {
           <p className="mt-3 whitespace-pre-wrap text-sm leading-7">{ticket.description}</p>
         </section>
 
+        {ticket.expected?.trim() ? (
+          <section className="border-b border-ink/10 py-8">
+            <h2 className="text-sm font-medium">What should have happened</h2>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-7">{ticket.expected}</p>
+          </section>
+        ) : null}
+
         {ticket.steps?.trim() ? (
           <section className="border-b border-ink/10 py-8">
             <h2 className="text-sm font-medium">Steps</h2>
@@ -51,6 +58,11 @@ export default function TicketDetail() {
 
         <dl className="border-b border-ink/10">
           <Fact label="Number" value={ticket.id} />
+          <Fact label="Name" value={ticket.name || "Not set"} />
+          <Fact label="Email" value={ticket.email || "Not set"} />
+          {ticket.phone?.trim() ? <Fact label="Phone" value={ticket.phone} /> : null}
+          <Fact label="Reply by" value={channelLabel(ticket.channel) || "Not set"} />
+          {ticket.reference?.trim() ? <Fact label="Reference" value={ticket.reference} /> : null}
           <Fact label="Project" value={ticket.project || "Not set"} />
           {ticket.location?.trim() ? <Fact label="Where it happens" value={ticket.location} /> : null}
           <Fact label="Category" value={ticket.category} />

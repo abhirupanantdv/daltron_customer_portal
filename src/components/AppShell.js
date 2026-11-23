@@ -73,7 +73,7 @@ function NavLinks({ pathname }) {
     <nav
       ref={navRef}
       data-tour="nav"
-      className="relative flex min-w-0 items-center gap-1 overflow-x-auto"
+      className="relative flex min-w-0 items-center gap-1 overflow-x-auto overflow-y-hidden"
       aria-label="Support"
       onMouseLeave={() => {
         setHot(null);
@@ -310,8 +310,11 @@ export default function AppShell({ children }) {
 
   const [barHidden, setBarHidden] = useState(false);
   const hideBar = barHidden && !open && !searchPresent;
+  const barMotion = useRef({ accum: 0, lockUntil: 0 });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    barMotion.current.accum = 0;
+    barMotion.current.lockUntil = performance.now() + 500;
     setBarHidden(false);
   }, [pathname]);
 
@@ -326,30 +329,44 @@ export default function AppShell({ children }) {
 
   useEffect(() => {
     const tops = new WeakMap();
-    let accum = 0;
     let frame = 0;
     let latestTop = 0;
 
     function onScroll(event) {
       const node = event.target;
       if (!(node instanceof Element)) return;
+      if (node.closest(".is-transitioning")) return;
       if (node.scrollHeight <= node.clientHeight + 1) return;
       const top = node.scrollTop;
       const previous = tops.get(node) ?? top;
       tops.set(node, top);
       const delta = top - previous;
       if (!delta) return;
-      accum = (delta > 0 && accum > 0) || (delta < 0 && accum < 0) ? accum + delta : delta;
+      const motion = barMotion.current;
+      // The hide lock used to drop every event, including the scroll back up.
+      // Lenis spreads that return into small steps, so the bar never came back.
+      if (performance.now() < motion.lockUntil && delta > 0) return;
+      motion.accum = (delta > 0 && motion.accum > 0) || (delta < 0 && motion.accum < 0) ? motion.accum + delta : delta;
       latestTop = top;
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
+        const motionNow = barMotion.current;
+        const locked = performance.now() < motionNow.lockUntil;
         if (document.documentElement.hasAttribute("data-tour-open") || document.querySelector("header [role='menu']") || latestTop <= 12) {
+          motionNow.accum = 0;
           setBarHidden(false);
           return;
         }
-        if (accum > 24) setBarHidden(true);
-        else if (accum < -24) setBarHidden(false);
+        if (!locked && motionNow.accum > 24) {
+          motionNow.accum = 0;
+          motionNow.lockUntil = performance.now() + 340;
+          setBarHidden(true);
+        } else if (motionNow.accum < -24) {
+          motionNow.accum = 0;
+          motionNow.lockUntil = performance.now() + 340;
+          setBarHidden(false);
+        }
       });
     }
 
@@ -368,10 +385,10 @@ export default function AppShell({ children }) {
 
   return (
     <NavSearchContext.Provider value={search}>
-      <div className="flex h-dvh min-h-0 flex-col bg-transparent">
+      <div className="relative h-dvh min-h-0 bg-transparent">
         <header
           inert={hideBar ? true : undefined}
-          className={`z-40 shrink-0 bg-brand text-white transition-[height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none dark:shadow-[inset_0_-1px_0_rgba(255,255,255,0.08)] ${hideBar ? "h-0 overflow-hidden" : "h-16"}`}
+          className={`absolute inset-x-0 top-0 z-40 h-16 bg-brand text-white transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none dark:shadow-[inset_0_-1px_0_rgba(255,255,255,0.08)] ${hideBar ? "-translate-y-full" : "translate-y-0"}`}
         >
           <div className={`${pagePad} flex h-16 items-center gap-3 sm:gap-6`}>
             <Link to="/" className="flex shrink-0 items-center outline-none focus-visible:opacity-80" aria-label="AnantDV support">
@@ -400,7 +417,7 @@ export default function AppShell({ children }) {
             </div>
           </div>
         </header>
-        <div className="relative flex min-h-0 flex-1 flex-col">{children}</div>
+        <div className="flex h-full min-h-0 flex-col">{children}</div>
       </div>
     </NavSearchContext.Provider>
   );
