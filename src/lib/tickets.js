@@ -17,15 +17,6 @@ export function channelLabel(id) {
   return CHANNELS.find((item) => item.id === id)?.label ?? "";
 }
 
-export const STEPS = [
-  { id: "open", label: "Open", note: "We have this, and it's in the queue." },
-  { id: "in_progress", label: "In progress", note: "A specialist is working on it." },
-  { id: "waiting", label: "Waiting", note: "We need a reply from you to continue." },
-  { id: "resolved", label: "Resolved", note: "Closed. Send a message if it comes back." },
-];
-
-const STATUS_IDS = new Set(STEPS.map((step) => step.id));
-
 export const SEED = [
   {
     id: "TK-2041",
@@ -177,7 +168,7 @@ export function loadTickets() {
         ticket &&
         typeof ticket.id === "string" &&
         typeof ticket.subject === "string" &&
-        STATUS_IDS.has(ticket.status) &&
+        typeof ticket.status === "string" &&
         Array.isArray(ticket.messages),
     );
     return clean.length ? clean : null;
@@ -217,18 +208,22 @@ export function matchesFilter(ticket, filter, query) {
     const hay = [
       ticket.id,
       ticket.subject,
-      ticket.project,
-      ticket.category,
+      ticket.customer,
+      ticket.customerSite,
+      ticket.contactPerson,
+      ticket.contactEmail,
+      ticket.contactMobile,
+      ticket.reportedBy,
+      ticket.customerEquipment,
+      ticket.ticketType,
+      ticket.serviceCategory,
+      ticket.impact,
+      ticket.urgency,
       ticket.priority,
+      ticket.source,
+      ticket.erpStatus,
       ticket.description,
-      ticket.location,
-      ticket.steps,
-      ticket.name,
-      ticket.email,
-      ticket.phone,
-      ticket.reference,
-      ticket.expected,
-      channelLabel(ticket.channel),
+      ticket.customerComplaint,
     ]
       .filter(Boolean)
       .join(" ")
@@ -239,37 +234,19 @@ export function matchesFilter(ticket, filter, query) {
   return ticket.status === filter;
 }
 
-export function planReply(text, status) {
+export function planReply(text) {
   const value = text.toLowerCase();
   if (/\bthanks\b|\bthank you\b/.test(value)) {
-    return {
-      text: "Glad that helped. This thread stays here if you need anything else.",
-      status,
-    };
+    return { text: "Glad that helped. This thread stays here if you need anything else." };
   }
   if (/\burgent\b|\basap\b|\btoday\b/.test(value)) {
-    return {
-      text: "Understood. I've flagged this as time-sensitive and someone is on it.",
-      status: status === "resolved" ? "resolved" : "in_progress",
-    };
+    return { text: "Understood. I've flagged this as time-sensitive and someone is on it." };
   }
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (words.length < 4) {
-    return {
-      text: "Thanks — a bit more detail will help us look in the right place.",
-      status: "waiting",
-    };
+    return { text: "Thanks — a bit more detail will help us look in the right place." };
   }
-  if (status === "open") {
-    return {
-      text: "Thanks, I've added that to the ticket. A specialist is picking it up.",
-      status: "in_progress",
-    };
-  }
-  return {
-    text: "Got it. I've added your note, and we'll update the status in this thread.",
-    status,
-  };
+  return { text: "Got it. I've added your note. The desk updates the status on this ticket." };
 }
 
 const dateFmt = new Intl.DateTimeFormat("en-US", {

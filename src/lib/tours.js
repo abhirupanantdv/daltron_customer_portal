@@ -74,7 +74,7 @@ const ticketSteps = [
   step(
     "[data-tour='new-ticket']",
     "Open a new one",
-    "Subject, project, and what happened. It joins this list as soon as you create it.",
+    "Subject, customer, and the Service Ticket fields. It joins this list as soon as you create it.",
     { side: "bottom", align: "end" },
   ),
   step(
@@ -86,13 +86,13 @@ const ticketSteps = [
   step(
     "[data-tour='ticket-filters']",
     "Filter by status",
-    "Open, in progress, waiting on you, or resolved. The count is how many match.",
+    "Open the status list. Every status from the desk is in the menu, and each row shows how many tickets match.",
     { side: "bottom", align: "end" },
   ),
   step(
     "[data-tour='ticket-list'] li",
     "Open a ticket",
-    "Number, subject, project, and where it stands. Select one to see the full request.",
+    "Number, subject, customer, and where it stands. Select one to see the full request.",
     { side: "bottom", align: "start" },
   ),
   step(
@@ -101,47 +101,18 @@ const ticketSteps = [
     "Try another filter, or open a new ticket. Show every ticket clears the search.",
     { side: "top", align: "center" },
   ),
-  step("[data-tour='restore-samples']", "Sample tickets", "Puts the example requests back if the list was cleared.", { side: "top", align: "start" }),
+  step("[data-tour='restore-samples']", "Reload", "Loads the service desk tickets again.", { side: "top", align: "start" }),
 ];
 
 const newTicketSteps = [
-  step("[data-tour='field-subject']", "Subject", "A short line. This is the title you will see in the list.", { side: "bottom", align: "start" }),
-  step("[data-tour='field-project']", "Project", "Which project this is about. Suggestions appear as you type.", { side: "bottom", align: "start" }),
-  step(
-    "[data-tour='field-contact']",
-    "Who to reach",
-    "Your name and email. Add a phone number if you want a callback.",
-    { side: "bottom", align: "start" },
-  ),
-  step("[data-tour='field-channel']", "Reply by", "Chat, email, or a call. A call needs a phone number.", { side: "bottom", align: "start" }),
-  step(
-    "[data-tour='field-reference']",
-    "Reference",
-    "Invoice, order, or account. Required for billing, account, and order requests.",
-    { side: "bottom", align: "start" },
-  ),
-  step("[data-tour='field-category']", "Category", "Pick the closest fit so the desk can route it.", { side: "bottom", align: "start" }),
-  step("[data-tour='field-priority']", "Priority", "Normal is the usual choice. High is for something that is blocking you.", { side: "bottom", align: "start" }),
-  step(
-    "[data-tour='field-description']",
-    "What happened",
-    "A few sentences is enough. Say what happened, and what you need.",
-    { side: "top", align: "start" },
-  ),
-  step(
-    "[data-tour='field-expected']",
-    "What should have happened",
-    "Optional. What you expected instead of what you got.",
-    { side: "top", align: "start" },
-  ),
-  step("[data-tour='field-steps']", "Steps", "Optional. What you did just before this happened, if it is a bug.", { side: "top", align: "start" }),
-  step("[data-tour='field-files']", "Screenshots or a video", "Up to four images and one short video. Leave this empty if you have none.", { side: "top", align: "start" }),
-  step(
-    "[data-tour='create-ticket']",
-    "Create when you are ready",
-    "Nothing is sent until you press this. Cancel returns to the list.",
-    { side: "top", align: "end" },
-  ),
+  step("[data-tour='field-reference']", "Customer equipment", "Optional. The equipment record this ticket is about.", { side: "bottom", align: "start" }),
+  step("[data-tour='field-category']", "Service category", "Network, hardware, printer, and the other categories from the desk.", { side: "bottom", align: "start" }),
+  step("[data-tour='field-priority']", "Priority", "Critical, high, medium, or low.", { side: "bottom", align: "start" }),
+  step("[data-tour='field-subject']", "Subject", "A short line. This is the title on the service ticket.", { side: "bottom", align: "start" }),
+  step("[data-tour='field-contact']", "Reported by", "The person who reported it. This is stored on the service ticket.", { side: "bottom", align: "start" }),
+  step("[data-tour='field-description']", "Description", "What happened. This is the description field on the service ticket.", { side: "top", align: "start" }),
+  step("[data-tour='field-attachments']", "Photos and videos", "Add several. They are stored on the service ticket attachments.", { side: "top", align: "start" }),
+  step("[data-tour='create-ticket']", "Create when you are ready", "Nothing is sent until you press this. Cancel returns to the list.", { side: "top", align: "end" }),
 ];
 
 const detailSteps = [
@@ -149,19 +120,25 @@ const detailSteps = [
   step(
     "[data-tour='ticket-status']",
     "Where it stands",
-    "Open, in progress, waiting on you, or resolved. The note under the rail says what that means right now.",
+    "The status shown here is the one stored on the service ticket.",
     { side: "bottom", align: "center" },
   ),
   step(
     "[data-tour='ticket-request']",
     "Your request",
-    "The description you sent. The expected outcome, steps, and files show here when you added them.",
+    "The description stored on the service ticket.",
+    { side: "top", align: "start" },
+  ),
+  step(
+    "[data-tour='ticket-attachments']",
+    "Photos and videos",
+    "Files added with the ticket. They are the attachments stored on the service desk.",
     { side: "top", align: "start" },
   ),
   step(
     "[data-tour='ticket-actions']",
-    "Resolve or talk",
-    "Mark it resolved when you are done, or open the chat to add more.",
+    "Talk to the desk",
+    "Open the chat to add more. Status is updated on the service desk.",
     { side: "top", align: "start" },
   ),
 ];
@@ -170,14 +147,14 @@ const chatSteps = [
   step(
     "[data-tour='chat-back']",
     "This chat belongs to one ticket",
-    "Ticket status takes you back to the full request, the files, and the resolve button.",
+    "Ticket status takes you back to the full request.",
     { side: "bottom", align: "start" },
     hold,
   ),
   step(
     "[data-tour='chat-status']",
     "Status stays visible",
-    "The same rail as the ticket. Waiting means the desk needs a reply from you.",
+    "The status stored on this service ticket.",
     { side: "bottom", align: "center" },
     hold,
   ),
@@ -191,7 +168,7 @@ const chatSteps = [
   step(
     "[data-tour='chat-compose']",
     "Write a message",
-    "Enter sends. Shift+Enter adds a line. A message can reopen a resolved ticket.",
+    "Enter sends. Shift+Enter adds a line. A message does not change the ticket status.",
     { side: "top", align: "center" },
     hold,
   ),
@@ -229,7 +206,8 @@ export function stepsForPath(pathname) {
   const defined = TOURS[tourId(pathname)] ?? homeSteps;
   const available = defined.filter((item) => {
     if (!item.element) return true;
-    return Boolean(document.querySelector(item.element));
+    const target = document.querySelector(item.element);
+    return Boolean(target && target.getClientRects().length);
   });
   const meaningful = available.filter((item) => item.element !== "[data-tour='tour-replay']");
   return meaningful.length ? available : [fallbackStep];

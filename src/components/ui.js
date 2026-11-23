@@ -1,5 +1,4 @@
 import { Link } from "react-router-dom";
-import { STEPS } from "@/lib/tickets";
 
 export const primaryBtn =
   "inline-flex items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-paper transition hover:bg-ink-soft active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40";
@@ -7,14 +6,6 @@ export const ghostBtn =
   "inline-flex items-center justify-center gap-2 rounded-full border border-ink/15 bg-surface px-4 py-2.5 text-sm font-medium text-ink transition hover:bg-ink/[0.04] active:scale-[0.98]";
 export const fieldClass =
   "w-full rounded-xl border border-ink/15 bg-surface px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink/35 focus:border-ink focus:ring-4 focus:ring-ink/10";
-
-export const FILTERS = [
-  ["all", "All"],
-  ["open", "Open"],
-  ["in_progress", "In progress"],
-  ["waiting", "Waiting"],
-  ["resolved", "Resolved"],
-];
 
 export const pagePad = "px-6 sm:px-10 lg:px-20";
 
@@ -49,35 +40,14 @@ export function MissingTicket() {
   );
 }
 
-export function StatusRail({ status }) {
-  const index = Math.max(0, STEPS.findIndex((step) => step.id === status));
-  const progress = index / (STEPS.length - 1);
+export function TicketStatus({ status }) {
+  const label = status?.trim();
+  if (!label) return null;
   return (
-    <div className="relative">
-      <span className="absolute left-[12.5%] right-[12.5%] top-[7px] h-px bg-ink/15" aria-hidden="true" />
-      <span
-        className="absolute left-[12.5%] top-[7px] h-px bg-ink transition-all duration-500"
-        style={{ width: `calc(75% * ${progress})` }}
-        aria-hidden="true"
-      />
-      <ol aria-label="Ticket status" className="relative grid grid-cols-4">
-        {STEPS.map((step, i) => {
-          const state = i < index ? "done" : i === index ? "current" : "todo";
-          return (
-            <li key={step.id} aria-current={state === "current" ? "step" : undefined} className="flex flex-col items-center">
-              <span
-                className={`relative z-10 size-3.5 rounded-full transition ${
-                  state === "todo" ? "border-2 border-ink/25 bg-paper" : "bg-ink"
-                } ${state === "current" ? "ring-4 ring-ink/15" : ""}`}
-              />
-              <span className={`mt-1.5 px-1 text-center text-xs leading-4 ${state === "todo" ? "text-mute" : "font-medium text-ink"}`}>
-                {step.label}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
-    </div>
+    <p className="text-sm">
+      <span className="text-mute">Status</span>
+      <span className="ml-2 font-medium text-ink">{label}</span>
+    </p>
   );
 }
 

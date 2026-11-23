@@ -1,88 +1,96 @@
 import { Link, useParams } from "react-router-dom";
-import { STEPS, channelLabel, formatWhen } from "@/lib/tickets";
 import { useTickets } from "@/components/TicketsProvider";
-import { IconBack, IconChat, MissingTicket, PageFrame, PageSkeleton, StatusRail, formatDay, ghostBtn, primaryBtn } from "@/components/ui";
+import { IconBack, IconChat, MissingTicket, PageFrame, PageSkeleton, formatDay, primaryBtn } from "@/components/ui";
 
 export default function TicketDetail() {
   const { id } = useParams();
-  const { tickets, hydrated, now, resolveTicket, copyId } = useTickets();
+  const { tickets, hydrated, copyId } = useTickets();
   const ticket = tickets.find((item) => item.id === id) ?? null;
 
   if (!ticket && !hydrated) return <PageSkeleton />;
   if (!ticket) return <MissingTicket />;
 
-  const step = STEPS.find((item) => item.id === ticket.status) ?? STEPS[0];
   const messages = ticket.messages.filter((message) => message.from !== "system").length;
+  const status = ticket.status || ticket.erpStatus;
+  const description = ticket.description?.trim() || "";
+  const complaint = ticket.customerComplaint?.trim() || "";
+  const showComplaint = Boolean(complaint && complaint !== description);
+  const tone = statusTone(status);
 
   return (
     <PageFrame>
-      <div className="cove-in">
-        <Link to="/tickets" className="inline-flex items-center gap-1.5 text-sm text-mute transition hover:text-ink">
-          <IconBack className="size-4" />
-          All tickets
-        </Link>
+      <div className="cove-in mx-auto w-full max-w-6xl">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Link to="/tickets" className="inline-flex items-center gap-1.5 text-sm text-mute transition hover:text-ink">
+            <IconBack className="size-4" />
+            All tickets
+          </Link>
+          <div data-tour="ticket-actions" className="flex flex-wrap items-center gap-2">
+            <span data-tour="ticket-status">
+              <StatusPill status={status} tone={tone} />
+            </span>
+            <Link to={`/tickets/${ticket.id}/chat`} className={primaryBtn}>
+              <IconChat className="size-4" />
+              {messages ? `Open chat · ${messages}` : "Open chat"}
+            </Link>
+          </div>
+        </div>
 
-        <button type="button" data-tour="ticket-number" onClick={() => copyId(ticket.id)} className="mt-6 block font-mono text-xs text-mute transition hover:text-ink" title="Copy ticket number">
+        <button
+          type="button"
+          data-tour="ticket-number"
+          onClick={() => copyId(ticket.id)}
+          className="mt-8 inline-flex items-center gap-2 rounded-full bg-mist px-3 py-1 font-mono text-xs text-mute transition hover:text-ink"
+          title="Copy ticket number"
+        >
           {ticket.id}
         </button>
-        <h1 className="mt-2 font-display text-4xl leading-tight tracking-tight text-balance sm:text-5xl">{ticket.subject}</h1>
+        <h1 className="mt-3 max-w-3xl font-display text-4xl leading-tight tracking-tight text-balance sm:text-5xl">{ticket.subject}</h1>
         <p className="mt-3 text-sm text-mute">
-          {[ticket.project, ticket.category, `${ticket.priority} priority`, `Updated ${formatWhen(ticket.updatedAt, now)}`].filter(Boolean).join(" · ")}
+          {[ticket.customer, `Reported ${formatDay(ticket.createdAt)}`, `Updated ${formatDay(ticket.updatedAt)}`].filter(Boolean).join(" · ")}
         </p>
 
-        <section data-tour="ticket-status" className="mt-8 border-y border-ink/10 py-6" aria-label="Status">
-          <StatusRail status={ticket.status} />
-          <p className="mt-4 text-sm leading-6 text-mute">{step.note}</p>
-        </section>
-
-        <section data-tour="ticket-request" className="border-b border-ink/10 py-8">
-          <h2 className="text-sm font-medium">Your request</h2>
-          <p className="mt-3 whitespace-pre-wrap text-sm leading-7">{ticket.description}</p>
-        </section>
-
-        {ticket.expected?.trim() ? (
-          <section className="border-b border-ink/10 py-8">
-            <h2 className="text-sm font-medium">What should have happened</h2>
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-7">{ticket.expected}</p>
+        <div className="mt-8 lg:mt-10 lg:border-b lg:border-ink/10">
+          <section data-tour="ticket-request" className="grid gap-4 lg:gap-0" aria-label="Request">
+            <Narrative title="Description" body={description} empty="No description was stored with this ticket." />
+            {showComplaint ? <Narrative title="Customer complaint" body={complaint} quiet /> : null}
+            <Attachments files={ticket.attachments} />
           </section>
-        ) : null}
 
-        {ticket.steps?.trim() ? (
-          <section className="border-b border-ink/10 py-8">
-            <h2 className="text-sm font-medium">Steps</h2>
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-7">{ticket.steps}</p>
-          </section>
-        ) : null}
-
-        <Attachments files={ticket.attachments ?? []} />
-
-        <dl className="border-b border-ink/10">
-          <Fact label="Number" value={ticket.id} />
-          <Fact label="Name" value={ticket.name || "Not set"} />
-          <Fact label="Email" value={ticket.email || "Not set"} />
-          {ticket.phone?.trim() ? <Fact label="Phone" value={ticket.phone} /> : null}
-          <Fact label="Reply by" value={channelLabel(ticket.channel) || "Not set"} />
-          {ticket.reference?.trim() ? <Fact label="Reference" value={ticket.reference} /> : null}
-          <Fact label="Project" value={ticket.project || "Not set"} />
-          {ticket.location?.trim() ? <Fact label="Where it happens" value={ticket.location} /> : null}
-          <Fact label="Category" value={ticket.category} />
-          <Fact label="Priority" value={ticket.priority} />
-          <Fact label="Opened" value={formatDay(ticket.createdAt)} />
-          <Fact label="Updated" value={formatWhen(ticket.updatedAt, now)} />
-        </dl>
-
-        <div data-tour="ticket-actions" className="mt-8 flex flex-wrap items-center gap-3">
-          {ticket.status !== "resolved" ? (
-            <button type="button" onClick={() => resolveTicket(ticket.id)} className={ghostBtn}>
-              Mark resolved
-            </button>
-          ) : (
-            <p className="text-sm text-mute">Resolved. Send a message in the chat if it comes back.</p>
-          )}
-          <Link to={`/tickets/${ticket.id}/chat`} className={primaryBtn}>
-            <IconChat className="size-4" />
-            {messages ? `Open chat · ${messages}` : "Open chat"}
-          </Link>
+          <aside className="mt-4 grid gap-4 lg:mt-0 lg:gap-0">
+            <Panel
+              title="Customer"
+              facts={[
+                { label: "Customer", value: ticket.customer },
+                { label: "Site", value: siteLabel(ticket.customerSite, ticket.customer) },
+                { label: "Equipment", value: ticket.customerEquipment, mono: true },
+                { label: "Contact", value: ticket.contactPerson },
+                { label: "Email", value: ticket.contactEmail, href: mailHref(ticket.contactEmail) },
+                { label: "Mobile", value: ticket.contactMobile, href: telHref(ticket.contactMobile) },
+              ]}
+            />
+            <Panel
+              title="Classification"
+              columns={2}
+              facts={[
+                { label: "Type", value: ticket.ticketType },
+                { label: "Category", value: ticket.serviceCategory },
+                { label: "Priority", value: ticket.priority, mark: priorityTone(ticket.priority) },
+                { label: "Impact", value: ticket.impact },
+                { label: "Urgency", value: ticket.urgency },
+                { label: "Source", value: ticket.source },
+              ]}
+            />
+            <Panel
+              title="Record"
+              facts={[
+                { label: "Status", value: status },
+                { label: "Reported by", value: ticket.reportedBy },
+                { label: "Opened", value: formatStamp(ticket.createdAt) },
+                { label: "Updated", value: formatStamp(ticket.updatedAt) },
+              ]}
+            />
+          </aside>
         </div>
       </div>
     </PageFrame>
@@ -90,31 +98,137 @@ export default function TicketDetail() {
 }
 
 function Attachments({ files }) {
-  if (!files.length) return null;
+  if (!files?.length) return null;
   return (
-    <section className="border-b border-ink/10 py-8">
-      <h2 className="text-sm font-medium">Screenshots and video</h2>
-      <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+    <div data-tour="ticket-attachments" className="rounded-3xl border border-ink/10 bg-surface/70 px-6 py-6 lg:rounded-none lg:border-x-0 lg:border-b-0 lg:bg-transparent lg:px-0 lg:py-8 lg:border-t">
+      <h2 className="text-xs font-medium uppercase tracking-[0.16em] text-mute lg:text-sm lg:font-semibold lg:normal-case lg:tracking-normal lg:text-ink">Attachments</h2>
+      <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {files.map((file) => (
-          <li key={file.id} className="overflow-hidden rounded-xl border border-ink/10">
+          <li key={file.id} className="overflow-hidden rounded-2xl border border-ink/10 bg-surface">
             {file.kind === "video" ? (
-              <video src={file.url} controls className="aspect-video w-full bg-black" />
+              <video src={file.url} controls preload="metadata" className="aspect-video w-full bg-ink" />
             ) : (
-              <img src={file.url} alt={file.name} className="aspect-video w-full object-cover" />
+              <a href={file.url} target="_blank" rel="noreferrer">
+                <img src={file.url} alt={file.name} className="aspect-video w-full object-cover" />
+              </a>
             )}
             <p className="truncate px-3 py-2 text-xs text-mute">{file.name}</p>
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+function Narrative({ title, body, empty, quiet }) {
+  return (
+    <div
+      className={`h-full rounded-3xl px-6 py-6 lg:h-auto lg:rounded-none lg:border-x-0 lg:border-b-0 lg:bg-transparent lg:px-0 lg:py-8 lg:border-t lg:border-ink/10 ${
+        quiet ? "border border-ink/10 bg-surface/70" : "bg-mist"
+      }`}
+    >
+      <h2 className="text-xs font-medium uppercase tracking-[0.16em] text-mute lg:text-sm lg:font-semibold lg:normal-case lg:tracking-normal lg:text-ink">{title}</h2>
+      <p className={`mt-3 max-w-3xl whitespace-pre-wrap text-[15px] leading-7 ${body ? "text-ink" : "text-mute"}`}>{body || empty}</p>
+    </div>
+  );
+}
+
+function Panel({ title, facts, columns = 1 }) {
+  const rows = facts.filter((fact) => fact.value?.trim());
+  if (!rows.length) return null;
+  const wideCols = rows.length > 4 ? "lg:grid-cols-3" : "lg:grid-cols-4";
+  return (
+    <section className="h-full rounded-3xl border border-ink/10 bg-surface/70 px-5 py-5 lg:h-auto lg:rounded-none lg:border-x-0 lg:border-b-0 lg:bg-transparent lg:px-0 lg:py-8 lg:border-t">
+      <h2 className="text-xs font-medium uppercase tracking-[0.16em] text-mute lg:text-sm lg:font-semibold lg:normal-case lg:tracking-normal lg:text-ink">{title}</h2>
+      <dl className={`mt-4 grid gap-x-4 gap-y-4 lg:mt-5 lg:gap-x-10 lg:gap-y-6 ${columns === 2 ? "grid-cols-2" : "grid-cols-1"} ${wideCols}`}>
+        {rows.map((fact) => (
+          <div key={fact.label} className={columns === 2 && (fact.href || fact.mono) ? "col-span-2 lg:col-span-1" : ""}>
+            <dt className="text-xs text-mute">{fact.label}</dt>
+            <dd className="mt-1 text-sm font-medium">
+              {fact.mark ? <Mark tone={fact.mark}>{fact.value}</Mark> : <FactValue fact={fact} />}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </section>
   );
 }
 
-function Fact({ label, value }) {
+function FactValue({ fact }) {
+  const className = fact.mono ? "break-all font-mono text-[13px] font-medium" : "break-words font-medium";
+  if (!fact.href) return <span className={className}>{fact.value}</span>;
   return (
-    <div className="flex items-baseline justify-between gap-6 border-b border-ink/10 py-3.5 text-sm last:border-b-0">
-      <dt className="text-mute">{label}</dt>
-      <dd className="text-right font-medium">{value}</dd>
-    </div>
+    <a href={fact.href} className={`${className} underline-offset-2 hover:underline`}>
+      {fact.value}
+    </a>
   );
+}
+
+function Mark({ tone, children }) {
+  const dot = tone === "high" ? "bg-amber" : tone === "low" ? "bg-ink/25" : "bg-cyan";
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className={`size-1.5 rounded-full ${dot}`} aria-hidden="true" />
+      {children}
+    </span>
+  );
+}
+
+function StatusPill({ status, tone }) {
+  if (!status?.trim()) return null;
+  const dot = tone === "closed" ? "bg-ink/30" : tone === "wait" ? "bg-amber" : "bg-cyan";
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-surface px-3 py-2 text-sm font-medium">
+      <span className={`size-2 rounded-full ${dot}`} aria-hidden="true" />
+      {status}
+    </span>
+  );
+}
+
+function statusTone(status) {
+  const value = (status || "").toLowerCase();
+  if (/(closed|resolved|cancelled|canceled)/.test(value)) return "closed";
+  if (/(wait|hold|pending)/.test(value)) return "wait";
+  return "open";
+}
+
+function priorityTone(priority) {
+  const value = (priority || "").toLowerCase();
+  if (!value) return "";
+  if (/(critical|high|urgent)/.test(value)) return "high";
+  if (value === "low") return "low";
+  return "mid";
+}
+
+function siteLabel(site, customer) {
+  const value = site?.trim();
+  if (!value) return "";
+  const match = /^SITE-(.+)-(\d+)$/.exec(value);
+  if (!match) return value;
+  const [, name, code] = match;
+  if (customer && name === customer) return `Site ${code}`;
+  return `${name} · ${code}`;
+}
+
+function mailHref(value) {
+  const email = value?.trim();
+  return email ? `mailto:${email}` : "";
+}
+
+function telHref(value) {
+  const mobile = value?.trim();
+  return mobile ? `tel:${mobile.replace(/[^\d+]/g, "")}` : "";
+}
+
+function formatStamp(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
 }

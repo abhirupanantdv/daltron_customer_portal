@@ -58,7 +58,7 @@ export default function Overview() {
   return (
     <>
       <section className="relative isolate flex min-h-[22rem] w-full items-center justify-center overflow-hidden sm:min-h-[26rem] lg:min-h-[30rem]">
-        <img src="/hero-support.jpg" alt="" className="absolute inset-0 h-full w-full object-cover object-center" />
+        <img src={`${import.meta.env.BASE_URL}hero-support.jpg`} alt="" className="absolute inset-0 h-full w-full object-cover object-center" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(9,31,43,0.62),rgba(9,31,43,0.28)_58%,rgba(9,31,43,0.5))]" />
         <div className={`relative z-10 w-full ${pagePad} py-16 text-center text-white`}>
           <h1 className="font-display text-4xl tracking-tight text-balance sm:text-5xl lg:text-6xl">Welcome to AnantDV Support</h1>

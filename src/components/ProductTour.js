@@ -116,10 +116,10 @@ export default function TourButton() {
       aria-label="Replay tutorial"
       title="Replay tutorial"
       onClick={() => startPageTour(pathname)}
-      className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-sm font-medium text-white/80 outline-none transition hover:bg-white/10 hover:text-white focus-visible:bg-white/10"
+      className="hidden h-9 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-sm font-medium text-white/80 outline-none transition hover:bg-white/10 hover:text-white focus-visible:bg-white/10 sm:inline-flex"
     >
       <IconTour className="size-4 shrink-0" />
-      <span className="hidden sm:inline">Tutorial</span>
+      <span className="hidden md:inline">Tutorial</span>
     </button>
   );
 }

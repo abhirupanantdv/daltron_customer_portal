@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { STEPS, formatClock, formatWhen } from "@/lib/tickets";
+import { formatClock, formatWhen } from "@/lib/tickets";
 import { useTickets } from "@/components/TicketsProvider";
-import { IconBack, IconSend, MissingTicket, PageSkeleton, StatusRail, fieldClass, pagePad } from "@/components/ui";
+import { IconBack, IconSend, MissingTicket, PageSkeleton, TicketStatus, fieldClass, pagePad } from "@/components/ui";
 
 export default function ChatPage() {
   const { id } = useParams();
@@ -12,7 +12,7 @@ export default function ChatPage() {
   if (!ticket && !hydrated) return <PageSkeleton />;
   if (!ticket) return <MissingTicket />;
 
-  const step = STEPS.find((item) => item.id === ticket.status) ?? STEPS[0];
+  const status = ticket.status || ticket.erpStatus;
 
   return (
     <div className="cove-in flex h-full min-h-0 flex-col bg-transparent">
@@ -26,10 +26,10 @@ export default function ChatPage() {
         </div>
         <h1 className="mt-3 font-display text-2xl leading-tight tracking-tight text-balance sm:text-3xl">{ticket.subject}</h1>
         <p className="mt-1 text-sm text-mute">
-          {[ticket.project, ticket.category, `${ticket.priority} priority`, step.label, `Updated ${formatWhen(ticket.updatedAt, now)}`].filter(Boolean).join(" · ")}
+          {[ticket.customer, ticket.serviceCategory, ticket.priority, status, `Updated ${formatWhen(ticket.updatedAt, now)}`].filter(Boolean).join(" · ")}
         </p>
         <div data-tour="chat-status" className="mt-5">
-          <StatusRail status={ticket.status} />
+          <TicketStatus status={status} />
         </div>
       </div>
       <Conversation ticket={ticket} now={now} typing={typingId === ticket.id} onSend={sendMessage} />
@@ -94,9 +94,6 @@ function Conversation({ ticket, now, typing, onSend }) {
         ) : null}
         <div ref={endRef} />
       </div>
-      {ticket.status === "waiting" ? (
-        <p className={`${pagePad} shrink-0 border-t border-ink/10 bg-mist py-2.5 text-sm text-ink`}>Support is waiting on your reply.</p>
-      ) : null}
       <form data-tour="chat-compose" onSubmit={submit} className={`${pagePad} shrink-0 border-t border-ink/10 py-3`}>
         <div className="flex items-end gap-2">
           <label className="sr-only" htmlFor="reply">
@@ -117,7 +114,7 @@ function Conversation({ ticket, now, typing, onSend }) {
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder={ticket.status === "resolved" ? "Send a message to reopen…" : "Write a message…"}
+            placeholder="Write a message…"
             className={`${fieldClass} max-h-32 resize-none bg-mist`}
           />
           <button

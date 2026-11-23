@@ -114,7 +114,7 @@ function NavLinks({ pathname }) {
               const activeLink = navRef.current?.querySelector('[aria-current="page"]');
               if (activeLink) moveTo(activeLink);
             }}
-            className={`relative z-[1] inline-flex shrink-0 items-center gap-2 rounded-full px-2.5 py-2 text-sm font-medium outline-none transition-colors duration-200 sm:px-3 ${
+            className={`relative z-[1] inline-flex shrink-0 items-center gap-2 rounded-full px-1.5 py-2 text-sm font-medium outline-none transition-colors duration-200 sm:px-3 ${
               lit ? "text-white" : "text-white/70"
             }`}
           >
@@ -209,13 +209,16 @@ function NavSearchBar({ inputRef, query, onQuery, onClose }) {
           id="nav-ticket-search"
           value={query}
           onChange={(event) => onQuery(event.target.value)}
-          placeholder="Search tickets"
+          placeholder="Search"
           autoComplete="off"
           className="h-10 w-full bg-transparent px-2 text-sm text-brand outline-none placeholder:text-brand/40"
         />
       </div>
-      <button type="button" onClick={onClose} className="shrink-0 rounded-full px-2 py-1 text-sm text-white/80 outline-none hover:text-white focus-visible:bg-white/10">
-        Cancel
+      <button type="button" onClick={onClose} aria-label="Cancel" className="grid size-9 shrink-0 place-items-center rounded-full text-sm text-white/80 outline-none hover:bg-white/10 hover:text-white focus-visible:bg-white/10 sm:w-auto sm:px-2">
+        <svg viewBox="0 0 24 24" className="size-4 sm:hidden" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+          <path d="M6 6l12 12M18 6 6 18" strokeLinecap="round" />
+        </svg>
+        <span className="hidden sm:inline">Cancel</span>
       </button>
     </form>
   );
@@ -335,7 +338,7 @@ export default function AppShell({ children }) {
     function onScroll(event) {
       const node = event.target;
       if (!(node instanceof Element)) return;
-      if (node.closest(".is-transitioning")) return;
+      if (node.closest(".is-transitioning, [data-status-menu]")) return;
       if (node.scrollHeight <= node.clientHeight + 1) return;
       const top = node.scrollTop;
       const previous = tops.get(node) ?? top;
@@ -390,16 +393,22 @@ export default function AppShell({ children }) {
           inert={hideBar ? true : undefined}
           className={`absolute inset-x-0 top-0 z-40 h-16 bg-brand text-white transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none dark:shadow-[inset_0_-1px_0_rgba(255,255,255,0.08)] ${hideBar ? "-translate-y-full" : "translate-y-0"}`}
         >
-          <div className={`${pagePad} flex h-16 items-center gap-3 sm:gap-6`}>
+          <div className={`${pagePad} flex h-16 items-center gap-2 sm:gap-6`}>
             <Link to="/" className="flex shrink-0 items-center outline-none focus-visible:opacity-80" aria-label="AnantDV support">
               <Logo className="h-9 w-auto sm:h-10" />
             </Link>
-            <div className={`ml-auto min-w-0 transition-opacity duration-200 ${searchShown ? "pointer-events-none opacity-0" : "opacity-100"}`}>
+            <div
+              className={`min-w-0 shrink-0 transition-opacity duration-200 sm:ml-auto ${
+                searchPresent ? "max-sm:hidden" : "ml-auto"
+              } ${searchShown ? "pointer-events-none opacity-0" : "opacity-100"}`}
+            >
               <NavLinks pathname={pathname} />
             </div>
-            <div className={`nav-search-slot shrink-0 ${searchPresent ? (searchShown ? "nav-search-slot-in" : "nav-search-slot-out") : "w-0 pointer-events-none"}`}>
-              {searchPresent ? <NavSearchBar inputRef={inputRef} query={query} onQuery={applyQuery} onClose={() => setOpen(false)} /> : null}
-            </div>
+            {searchPresent ? (
+              <div className={`nav-search-slot min-w-0 flex-1 sm:flex-none sm:shrink-0 ${searchShown ? "nav-search-slot-in" : "nav-search-slot-out"}`}>
+                <NavSearchBar inputRef={inputRef} query={query} onQuery={applyQuery} onClose={() => setOpen(false)} />
+              </div>
+            ) : null}
             <div className="flex shrink-0 items-center gap-1">
               <TourButton />
               {searchPresent ? null : (
@@ -413,7 +422,9 @@ export default function AppShell({ children }) {
                   <IconSearch className="size-4" />
                 </button>
               )}
-              <AccountMenu />
+              <div className={searchPresent ? "max-sm:hidden" : ""}>
+                <AccountMenu />
+              </div>
             </div>
           </div>
         </header>

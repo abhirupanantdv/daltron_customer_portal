@@ -1,13 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import {
-  byUpdated,
-  cloneSeed,
-  loadTickets,
-  nextId,
-  planReply,
-  saveTickets,
-  uid,
-} from "@/lib/tickets";
+import { fetchOptions, fetchTickets, postTicket, saveChats, uploadTicketFile, withLocalChat } from "@/lib/erpClient";
+import { byUpdated, planReply, uid } from "@/lib/tickets";
 import LoadingScreen from "@/components/LoadingScreen";
 
 const TicketsContext = createContext(null);
@@ -19,7 +12,8 @@ export function useTickets() {
 }
 
 export default function TicketsProvider({ children }) {
-  const [tickets, setTickets] = useState(cloneSeed);
+  const [tickets, setTickets] = useState([]);
+  const [statuses, setStatuses] = useState([]);
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(null);
   const [hydrated, setHydrated] = useState(false);
@@ -42,21 +36,35 @@ export default function TicketsProvider({ children }) {
     };
   }, []);
 
-  useEffect(() => {
-    const saved = loadTickets();
-    if (saved) setTickets([...saved].sort(byUpdated));
-    setHydrated(true);
-    setNow(Date.now());
-    const tick = setInterval(() => setNow(Date.now()), 30000);
-    const timers = timersRef.current;
-    return () => {
-      clearInterval(tick);
-      for (const handle of timers.values()) clearTimeout(handle);
-    };
+  const reloadTickets = useCallback(async () => {
+    const [list, options] = await Promise.all([fetchTickets(), fetchOptions().catch(() => null)]);
+    if (Array.isArray(options?.statuses)) setStatuses(options.statuses.filter(Boolean));
+    setTickets([...list].sort(byUpdated));
+    return list;
   }, []);
 
   useEffect(() => {
-    if (hydrated) saveTickets(tickets);
+    let cancelled = false;
+    reloadTickets()
+      .catch((error) => {
+        if (!cancelled) setToast(error.message);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setHydrated(true);
+        setNow(Date.now());
+      });
+    const tick = setInterval(() => setNow(Date.now()), 30000);
+    const timers = timersRef.current;
+    return () => {
+      cancelled = true;
+      clearInterval(tick);
+      for (const handle of timers.values()) clearTimeout(handle);
+    };
+  }, [reloadTickets]);
+
+  useEffect(() => {
+    if (hydrated && tickets.length) saveChats(tickets);
   }, [tickets, hydrated]);
 
   useEffect(() => {
@@ -74,10 +82,9 @@ export default function TicketsProvider({ children }) {
       setTickets((prev) =>
         prev
           .map((ticket) => {
-            if (ticket.id !== id || ticket.status === "resolved") return ticket;
+            if (ticket.id !== id) return ticket;
             return {
               ...ticket,
-              status: plan.status,
               updatedAt: at,
               messages: [...ticket.messages, { id: uid(), from: "support", text: plan.text, at }],
             };
@@ -95,15 +102,12 @@ export default function TicketsProvider({ children }) {
       const current = tickets.find((ticket) => ticket.id === id);
       if (!current) return;
       const at = new Date().toISOString();
-      const status =
-        current.status === "resolved" ? "open" : current.status === "waiting" ? "in_progress" : current.status;
       setTickets((prev) =>
         prev
           .map((ticket) =>
             ticket.id === id
               ? {
                   ...ticket,
-                  status,
                   updatedAt: at,
                   messages: [...ticket.messages, { id: uid(), from: "you", text, at }],
                 }
@@ -111,84 +115,40 @@ export default function TicketsProvider({ children }) {
           )
           .sort(byUpdated),
       );
-      queueReply(id, planReply(text, status));
+      queueReply(id, planReply(text));
     },
     [tickets, queueReply],
   );
 
-  const createTicket = useCallback(
-    (input) => {
-      const at = new Date().toISOString();
-      const description = input.description.trim();
-      const ticket = {
-        id: nextId(tickets),
-        subject: input.subject.trim(),
-        project: input.project.trim(),
-        name: input.name.trim(),
-        email: input.email.trim(),
-        phone: input.phone.trim(),
-        channel: input.channel,
-        reference: input.reference.trim(),
-        location: input.location.trim(),
-        steps: input.steps.trim(),
-        category: input.category,
-        priority: input.priority,
-        expected: input.expected.trim(),
-        status: "open",
-        createdAt: at,
-        updatedAt: at,
-        description,
-        attachments: (input.attachments ?? []).map((file) => ({
-          id: file.id,
-          name: file.name,
-          kind: file.kind,
-          type: file.type,
-          url: file.url,
-        })),
-        messages: [{ id: uid(), from: "you", text: description, at }],
-      };
-      setTickets((prev) => [ticket, ...prev]);
-      setToast(`Ticket ${ticket.id} created`);
-      return ticket;
-    },
-    [tickets],
-  );
-
-  const resolveTicket = useCallback((id) => {
-    const pending = timersRef.current.get(id);
-    if (pending) {
-      clearTimeout(pending);
-      timersRef.current.delete(id);
+  const createTicket = useCallback(async (input) => {
+    const { files = [], ...fields } = input;
+    const body = await postTicket(fields);
+    const attachments = [];
+    const failed = [];
+    for (const file of files) {
+      try {
+        const uploaded = await uploadTicketFile(body.ticket.id, file);
+        if (uploaded.file) attachments.push(uploaded.file);
+      } catch {
+        failed.push(file.name || "file");
+      }
     }
-    setTypingId((current) => (current === id ? null : current));
-    const at = new Date().toISOString();
-    setTickets((prev) =>
-      prev
-        .map((ticket) =>
-          ticket.id === id
-            ? {
-                ...ticket,
-                status: "resolved",
-                updatedAt: at,
-                messages: [
-                  ...ticket.messages,
-                  { id: uid(), from: "system", text: "You marked this ticket resolved.", at },
-                ],
-              }
-            : ticket,
-        )
-        .sort(byUpdated),
-    );
-    setToast("Ticket marked resolved");
+    const ticket = { ...withLocalChat([body.ticket])[0], attachments };
+    setTickets((prev) => [ticket, ...prev.filter((item) => item.id !== ticket.id)].sort(byUpdated));
+    const fileWarning = failed.length === 1 ? `Could not attach ${failed[0]}.` : failed.length ? `Could not attach ${failed.length} files.` : "";
+    const warning = [body.warning, fileWarning].filter(Boolean).join(" ");
+    setToast(warning ? `Ticket ${ticket.id} created. ${warning}` : `Ticket ${ticket.id} created`);
+    return ticket;
   }, []);
 
-  const restoreSamples = useCallback(() => {
-    for (const handle of timersRef.current.values()) clearTimeout(handle);
-    timersRef.current.clear();
-    setTypingId(null);
-    setTickets(cloneSeed());
-    setToast("Sample tickets restored");
-  }, []);
+  const refreshTickets = useCallback(async () => {
+    try {
+      await reloadTickets();
+      setToast("Tickets reloaded");
+    } catch (error) {
+      setToast(error.message);
+    }
+  }, [reloadTickets]);
 
   const copyId = useCallback(async (id) => {
     try {
@@ -202,16 +162,16 @@ export default function TicketsProvider({ children }) {
   const value = useMemo(
     () => ({
       tickets,
+      statuses,
       hydrated,
       now,
       typingId,
       createTicket,
       sendMessage,
-      resolveTicket,
-      restoreSamples,
+      refreshTickets,
       copyId,
     }),
-    [tickets, hydrated, now, typingId, createTicket, sendMessage, resolveTicket, restoreSamples, copyId],
+    [tickets, statuses, hydrated, now, typingId, createTicket, sendMessage, refreshTickets, copyId],
   );
 
   return (

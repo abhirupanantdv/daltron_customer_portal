@@ -238,6 +238,20 @@ body::after {
   width: min(32rem, calc(100vw - 12.5rem));
 }
 
+@media (max-width: 639px) {
+  .nav-search-slot-in,
+  .nav-search-slot-out {
+    animation: none;
+    width: auto;
+    opacity: 1;
+  }
+
+  .nav-search-slot-in > form,
+  .nav-search-slot-out > form {
+    width: 100%;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .nav-pill-ready {
     transition: none;
@@ -246,6 +260,9 @@ body::after {
   .nav-search-slot-out {
     animation: none;
   }
+}
+
+@media (prefers-reduced-motion: reduce) and (min-width: 640px) {
   .nav-search-slot-in {
     width: min(32rem, calc(100vw - 12.5rem));
     opacity: 1;
