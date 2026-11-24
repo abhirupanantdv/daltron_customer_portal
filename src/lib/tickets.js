@@ -208,13 +208,7 @@ export function matchesFilter(ticket, filter, query) {
     const hay = [
       ticket.id,
       ticket.subject,
-      ticket.customer,
-      ticket.customerSite,
-      ticket.contactPerson,
-      ticket.contactEmail,
-      ticket.contactMobile,
       ticket.reportedBy,
-      ticket.customerEquipment,
       ticket.ticketType,
       ticket.serviceCategory,
       ticket.impact,

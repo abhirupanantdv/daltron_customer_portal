@@ -47,7 +47,7 @@ export default function TicketDetail() {
         </button>
         <h1 className="mt-3 max-w-3xl font-display text-4xl leading-tight tracking-tight text-balance sm:text-5xl">{ticket.subject}</h1>
         <p className="mt-3 text-sm text-mute">
-          {[ticket.customer, `Reported ${formatDay(ticket.createdAt)}`, `Updated ${formatDay(ticket.updatedAt)}`].filter(Boolean).join(" · ")}
+          {[`Reported ${formatDay(ticket.createdAt)}`, `Updated ${formatDay(ticket.updatedAt)}`].join(" · ")}
         </p>
 
         <div className="mt-8 lg:mt-10 lg:border-b lg:border-ink/10">
@@ -58,17 +58,6 @@ export default function TicketDetail() {
           </section>
 
           <aside className="mt-4 grid gap-4 lg:mt-0 lg:gap-0">
-            <Panel
-              title="Customer"
-              facts={[
-                { label: "Customer", value: ticket.customer },
-                { label: "Site", value: siteLabel(ticket.customerSite, ticket.customer) },
-                { label: "Equipment", value: ticket.customerEquipment, mono: true },
-                { label: "Contact", value: ticket.contactPerson },
-                { label: "Email", value: ticket.contactEmail, href: mailHref(ticket.contactEmail) },
-                { label: "Mobile", value: ticket.contactMobile, href: telHref(ticket.contactMobile) },
-              ]}
-            />
             <Panel
               title="Classification"
               columns={2}
@@ -198,26 +187,6 @@ function priorityTone(priority) {
   if (/(critical|high|urgent)/.test(value)) return "high";
   if (value === "low") return "low";
   return "mid";
-}
-
-function siteLabel(site, customer) {
-  const value = site?.trim();
-  if (!value) return "";
-  const match = /^SITE-(.+)-(\d+)$/.exec(value);
-  if (!match) return value;
-  const [, name, code] = match;
-  if (customer && name === customer) return `Site ${code}`;
-  return `${name} · ${code}`;
-}
-
-function mailHref(value) {
-  const email = value?.trim();
-  return email ? `mailto:${email}` : "";
-}
-
-function telHref(value) {
-  const mobile = value?.trim();
-  return mobile ? `tel:${mobile.replace(/[^\d+]/g, "")}` : "";
 }
 
 function formatStamp(iso) {

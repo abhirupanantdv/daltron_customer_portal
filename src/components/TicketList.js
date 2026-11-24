@@ -245,7 +245,7 @@ function TicketRow({ ticket, now }) {
           </span>
           <span className="mt-1 block truncate text-lg font-medium">{ticket.subject}</span>
           <span className="mt-1 block text-sm text-mute">
-            {[ticket.customer, ticket.serviceCategory, ticket.priority, ticket.status || ticket.erpStatus].filter(Boolean).join(" · ")}
+            {[ticket.serviceCategory, ticket.priority, ticket.status || ticket.erpStatus].filter(Boolean).join(" · ")}
           </span>
         </span>
       </Link>

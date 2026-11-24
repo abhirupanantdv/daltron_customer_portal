@@ -26,7 +26,7 @@ export default function ChatPage() {
         </div>
         <h1 className="mt-3 font-display text-2xl leading-tight tracking-tight text-balance sm:text-3xl">{ticket.subject}</h1>
         <p className="mt-1 text-sm text-mute">
-          {[ticket.customer, ticket.serviceCategory, ticket.priority, status, `Updated ${formatWhen(ticket.updatedAt, now)}`].filter(Boolean).join(" · ")}
+          {[ticket.serviceCategory, ticket.priority, status, `Updated ${formatWhen(ticket.updatedAt, now)}`].filter(Boolean).join(" · ")}
         </p>
         <div data-tour="chat-status" className="mt-5">
           <TicketStatus status={status} />

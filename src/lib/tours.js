@@ -74,7 +74,7 @@ const ticketSteps = [
   step(
     "[data-tour='new-ticket']",
     "Open a new one",
-    "Subject, customer, and the Service Ticket fields. It joins this list as soon as you create it.",
+    "Subject and the Service Ticket fields. It joins this list as soon as you create it.",
     { side: "bottom", align: "end" },
   ),
   step(
@@ -92,7 +92,7 @@ const ticketSteps = [
   step(
     "[data-tour='ticket-list'] li",
     "Open a ticket",
-    "Number, subject, customer, and where it stands. Select one to see the full request.",
+    "Number, subject, and where it stands. Select one to see the full request.",
     { side: "bottom", align: "start" },
   ),
   step(
