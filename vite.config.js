@@ -52,6 +52,8 @@ export default defineConfig(({ command, mode }) => {
       erpApi({
         url: env.ERPNEXT_URL,
         token: env.ERPNEXT_TOKEN,
+        user: env.ERPNEXT_USER,
+        password: env.ERPNEXT_PASSWORD,
       }),
       build ? frappePage() : null,
     ].filter(Boolean),

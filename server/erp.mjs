@@ -1,3 +1,13 @@
+import { randomBytes } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.dirname(fileURLToPath(import.meta.url));
+const envPath = path.resolve(root, "../.env");
+const doctypesPath = path.resolve(root, "../config/doctypes.json");
+const DOCTYPE_KEYS = ["ticket", "customer", "site", "contact", "equipment", "file"];
+
 const CATEGORY_FALLBACK = ["Network", "Cabling", "Power", "Application", "Hardware", "Printer", "Software", "Connectivity", "Other"];
 const PRIORITY_FALLBACK = ["Critical", "High", "Medium", "Low"];
 
@@ -25,10 +35,34 @@ const TICKET_FIELDS = [
   "reported_datetime",
 ];
 
-export function erpApi({ url, token }) {
-  const env = {
-    url: (url || "").replace(/\/$/, ""),
+function doctypes() {
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(doctypesPath, "utf8"));
+  } catch {
+    throw httpError(500, "Doctype library was not found. Check config/doctypes.json.");
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw httpError(500, "Doctype library must be a JSON object.");
+  }
+  const names = {};
+  for (const key of DOCTYPE_KEYS) {
+    const value = String(data[key] || "").trim();
+    if (!value) throw httpError(500, `Doctype library is missing "${key}".`);
+    names[key] = value;
+  }
+  return names;
+}
+
+const sessions = new Map();
+const browserSessions = new Map();
+
+export function erpApi({ url, token, user, password } = {}) {
+  const fallback = {
+    url: url || "",
     token: token || "",
+    user: user || "",
+    password: password || "",
   };
 
   return {
@@ -38,10 +72,7 @@ export function erpApi({ url, token }) {
         const requestUrl = new URL(req.url || "/", "http://localhost");
         if (!requestUrl.pathname.startsWith("/api/erp")) return next();
         try {
-          if (!env.url || !env.token) {
-            send(res, 500, { error: "ERPNext is not configured. Add ERPNEXT_URL and ERPNEXT_TOKEN to .env and restart the dev server." });
-            return;
-          }
+          const env = currentEnv(fallback);
           await route(env, req, res, requestUrl);
         } catch (error) {
           send(res, error.status || 502, { error: error.message || "ERPNext request failed" });
@@ -51,8 +82,383 @@ export function erpApi({ url, token }) {
   };
 }
 
+function currentEnv(fallback) {
+  const file = readDotEnv(envPath);
+  return {
+    url: (file.ERPNEXT_URL ?? fallback.url).replace(/\/$/, ""),
+    token: file.ERPNEXT_TOKEN ?? fallback.token,
+    user: file.ERPNEXT_USER ?? fallback.user,
+    password: file.ERPNEXT_PASSWORD ?? fallback.password,
+  };
+}
+
+function envReady(env) {
+  if (!env.url) return false;
+  if (env.user && env.password) return true;
+  return Boolean(env.token);
+}
+
+function readDotEnv(filePath) {
+  let text;
+  try {
+    text = fs.readFileSync(filePath, "utf8");
+  } catch {
+    return {};
+  }
+  const values = {};
+  for (const line of text.replace(/^\uFEFF/, "").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const body = trimmed.startsWith("export ") ? trimmed.slice(7).trim() : trimmed;
+    const eq = body.indexOf("=");
+    if (eq <= 0) continue;
+    const key = body.slice(0, eq).trim();
+    let value = body.slice(eq + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    values[key] = value;
+  }
+  return values;
+}
+
+function usesSession(env) {
+  return Boolean(env.user && env.password);
+}
+
+function serverKey(env) {
+  return `${env.url}\n${env.user || ""}\n${env.token || ""}`;
+}
+
+function urlFromKey(key) {
+  return key.split("\n")[0];
+}
+
+function rememberCookies(jar, setCookies) {
+  for (const line of setCookies) {
+    const [pair, ...attrs] = line.split(";").map((part) => part.trim());
+    const eq = pair.indexOf("=");
+    if (eq <= 0) continue;
+    const name = pair.slice(0, eq);
+    const value = pair.slice(eq + 1);
+    let expiresAt = 0;
+    let maxAge = null;
+    for (const attr of attrs) {
+      const [rawKey, ...rest] = attr.split("=");
+      const key = rawKey.toLowerCase();
+      const attrValue = rest.join("=");
+      if (key === "max-age") maxAge = Number(attrValue);
+      if (key === "expires") expiresAt = Date.parse(attrValue) || 0;
+    }
+    if (maxAge !== null && Number.isFinite(maxAge)) expiresAt = Date.now() + maxAge * 1000;
+    jar.set(name, { value, expiresAt });
+  }
+}
+
+function cookieHeader(jar) {
+  const now = Date.now();
+  return [...jar.entries()]
+    .filter(([, item]) => item.value && (!item.expiresAt || item.expiresAt > now))
+    .map(([name, item]) => `${name}=${item.value}`)
+    .join("; ");
+}
+
+function setCookiesFrom(response) {
+  if (typeof response.headers.getSetCookie === "function") return response.headers.getSetCookie();
+  return [];
+}
+
+function sessionLive(session) {
+  const sid = session?.jar.get("sid");
+  if (!sid?.value) return false;
+  return !sid.expiresAt || sid.expiresAt > Date.now();
+}
+
+async function loginToServer(env) {
+  const result = await loginWithCredentials(env.url, { usr: env.user, pwd: env.password });
+  if (result.status !== "ok") throw httpError(401, "Login failed");
+  return result.session;
+}
+
+async function loginWithCredentials(url, { usr, pwd, otp, tmpId }) {
+  const params = new URLSearchParams({ usr, pwd });
+  if (otp) params.set("otp", otp);
+  if (tmpId) params.set("tmp_id", tmpId);
+  const response = await fetch(`${url}/api/method/login`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: params,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (payload.verification && payload.message !== "Logged In") {
+    return {
+      status: "otp",
+      prompt: payload.verification.prompt || payload.verification.method || "Enter the verification code",
+      tmpId: payload.tmp_id || "",
+    };
+  }
+  if (!response.ok || payload.message !== "Logged In") {
+    const message = typeof payload.message === "string" && payload.message !== "Logged In" ? payload.message : erpMessage(payload);
+    throw httpError(response.status || 401, message || "Those credentials were not accepted.");
+  }
+  const jar = new Map();
+  rememberCookies(jar, setCookiesFrom(response));
+  if (!jar.get("sid")?.value) throw httpError(401, "Login did not return a session.");
+  const session = { jar, csrf: jar.get("csrf_token")?.value || "" };
+  if (!session.csrf) session.csrf = await fetchCsrf({ url }, session);
+  const user = cookieText(jar.get("user_id")?.value) || usr;
+  const fullName = cookieText(jar.get("full_name")?.value) || payload.full_name || user;
+  return { status: "ok", session, user, fullName };
+}
+
+function cookieText(value) {
+  if (!value) return "";
+  try {
+    return decodeURIComponent(value.replace(/\+/g, " "));
+  } catch {
+    return value;
+  }
+}
+
+function readCookie(req, name) {
+  const header = req.headers.cookie || "";
+  for (const part of header.split(";")) {
+    const [rawKey, ...rest] = part.trim().split("=");
+    if (rawKey !== name) continue;
+    const value = rest.join("=");
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+  return "";
+}
+
+function setDevCookie(req, res, value, maxAge) {
+  const secure = req.socket?.encrypted ? "; Secure" : "";
+  res.setHeader("Set-Cookie", `erp_dev=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`);
+}
+
+function browserSessionFor(req, url) {
+  const id = readCookie(req, "erp_dev");
+  if (!id) return null;
+  const entry = browserSessions.get(id);
+  if (!entry || entry.url !== url || !sessionLive(entry.session)) {
+    if (entry) browserSessions.delete(id);
+    return null;
+  }
+  return { ...entry, id };
+}
+
+function scopeEnv(env, req) {
+  const entry = browserSessionFor(req, env.url);
+  if (entry) {
+    return { ...env, token: "", _session: entry.session, _browser: true, _browserId: entry.id };
+  }
+  if (!envReady(env)) return null;
+  return env;
+}
+
+async function handleLogin(env, req, res) {
+  if (!env.url) throw httpError(500, "ERPNext is not configured. Add ERPNEXT_URL to .env.");
+  let input = {};
+  try {
+    input = JSON.parse((await readBody(req)).toString("utf8") || "{}");
+  } catch {
+    throw httpError(400, "Enter your email and password.");
+  }
+  const usr = String(input.usr || "").trim();
+  const pwd = String(input.pwd || "");
+  const otp = String(input.otp || "").trim();
+  const tmpId = String(input.tmpId || "").trim();
+  if (!usr || !pwd) throw httpError(400, "Enter your email and password.");
+  if (usr.length > 320 || pwd.length > 4096 || otp.length > 32 || tmpId.length > 256) {
+    throw httpError(400, "Those credentials were not accepted.");
+  }
+  const result = await loginWithCredentials(env.url, { usr, pwd, otp, tmpId });
+  if (result.status === "otp") {
+    send(res, 200, { status: "otp", prompt: result.prompt, tmpId: result.tmpId });
+    return;
+  }
+  if (browserSessions.size >= 40) {
+    const oldest = browserSessions.keys().next().value;
+    if (oldest) browserSessions.delete(oldest);
+  }
+  const id = randomBytes(24).toString("hex");
+  browserSessions.set(id, {
+    session: result.session,
+    user: result.user,
+    fullName: result.fullName,
+    url: env.url,
+  });
+  setDevCookie(req, res, id, 60 * 60 * 12);
+  send(res, 200, { status: "ok", user: result.user, fullName: result.fullName });
+}
+
+async function handleLogout(env, req, res) {
+  const id = readCookie(req, "erp_dev");
+  const entry = id ? browserSessions.get(id) : null;
+  if (id) browserSessions.delete(id);
+  if (entry?.session && env.url) await logoutSession(env.url, entry.session);
+  setDevCookie(req, res, "", 0);
+  send(res, 200, { ok: true });
+}
+
+async function fetchCsrf(env, session) {
+  const response = await fetch(`${env.url}/api/method/frappe.sessions.get_csrf_token`, {
+    headers: { Accept: "application/json", Cookie: cookieHeader(session.jar) },
+  });
+  const payload = await response.json().catch(() => ({}));
+  rememberCookies(session.jar, setCookiesFrom(response));
+  const token = (typeof payload.message === "string" && payload.message) || session.jar.get("csrf_token")?.value || "";
+  if (!response.ok || !token) throw httpError(401, "Login did not return a CSRF token.");
+  return token;
+}
+
+async function logoutSession(url, session) {
+  const cookie = cookieHeader(session.jar);
+  if (!cookie) return;
+  try {
+    await fetch(`${url}/api/method/logout`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Cookie: cookie,
+        ...(session.csrf ? { "X-Frappe-CSRF-Token": session.csrf } : {}),
+      },
+    });
+  } catch {
+    // A closed old server should not block the next login.
+  }
+}
+
+async function retireOtherSessions(env) {
+  const key = serverKey(env);
+  const stale = [];
+  for (const [storedKey, entry] of sessions) {
+    if (storedKey === key || !entry.session) continue;
+    stale.push([storedKey, entry.session]);
+  }
+  for (const [storedKey, session] of stale) {
+    sessions.delete(storedKey);
+    await logoutSession(urlFromKey(storedKey), session);
+  }
+}
+
+async function ensureSession(env) {
+  if (env._session) return env._session;
+  if (!usesSession(env)) return null;
+  const key = serverKey(env);
+  const cached = sessions.get(key);
+  if (cached?.session) {
+    if (sessionLive(cached.session)) return cached.session;
+    sessions.delete(key);
+  } else if (cached?.pending) {
+    return cached.pending;
+  }
+  const pending = loginToServer(env).then((session) => {
+    if (sessions.get(key)?.pending !== pending) return session;
+    sessions.set(key, { session });
+    return session;
+  });
+  sessions.set(key, { pending });
+  try {
+    return await pending;
+  } catch (error) {
+    if (sessions.get(key)?.pending === pending) sessions.delete(key);
+    throw error;
+  }
+}
+
+function dropSession(env) {
+  sessions.delete(serverKey(env));
+}
+
+function absorbCookies(env, response) {
+  const session = env._session || (usesSession(env) ? sessions.get(serverKey(env))?.session : null);
+  if (!session) return;
+  rememberCookies(session.jar, setCookiesFrom(response));
+  const csrf = session.jar.get("csrf_token")?.value;
+  if (csrf) session.csrf = csrf;
+}
+
+async function authHeaders(env, { method = "GET", headers = {} } = {}) {
+  await retireOtherSessions(env);
+  const session = await ensureSession(env);
+  if (!session) {
+    return { Accept: "application/json", Authorization: `token ${env.token}`, ...headers };
+  }
+  const csrf = method === "GET" || method === "HEAD" ? "" : session.csrf;
+  return {
+    Accept: "application/json",
+    Cookie: cookieHeader(session.jar),
+    ...(csrf ? { "X-Frappe-CSRF-Token": csrf } : {}),
+    ...headers,
+  };
+}
+
+async function looksLikeCsrf(response) {
+  if (response.status !== 403) return false;
+  const body = await response.clone().json().catch(() => ({}));
+  return erpMessage(body).toLowerCase().includes("csrf");
+}
+
+async function erpFetch(env, requestPath, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const run = async () => {
+    const headers = await authHeaders(env, { method, headers: options.headers });
+    const response = await fetch(`${env.url}${requestPath}`, {
+      ...options,
+      method,
+      headers,
+    });
+    absorbCookies(env, response);
+    return response;
+  };
+
+  const response = await run();
+  if (env._browser) {
+    if (response.status === 401 && env._browserId) browserSessions.delete(env._browserId);
+    return response;
+  }
+  if (!usesSession(env) || !(response.status === 401 || (await looksLikeCsrf(response)))) return response;
+  dropSession(env);
+  return run();
+}
+
 async function route(env, req, res, requestUrl) {
   const { pathname } = requestUrl;
+  if (req.method === "POST" && pathname === "/api/erp/login") {
+    await handleLogin(env, req, res);
+    return;
+  }
+  if (req.method === "GET" && pathname === "/api/erp/session") {
+    const entry = browserSessionFor(req, env.url);
+    if (!entry) {
+      send(res, 401, { error: "Sign in to continue." });
+      return;
+    }
+    send(res, 200, { user: entry.user, fullName: entry.fullName });
+    return;
+  }
+  if (req.method === "POST" && pathname === "/api/erp/logout") {
+    await handleLogout(env, req, res);
+    return;
+  }
+  const scoped = scopeEnv(env, req);
+  if (!scoped) {
+    if (!env.url) {
+      send(res, 500, { error: "ERPNext is not configured. Add ERPNEXT_URL to .env." });
+      return;
+    }
+    send(res, 401, { error: "Sign in to continue." });
+    return;
+  }
+  env = scoped;
   if (req.method === "GET" && pathname === "/api/erp/options") {
     send(res, 200, await loadOptions(env));
     return;
@@ -94,12 +500,13 @@ async function route(env, req, res, requestUrl) {
 }
 
 async function loadOptions(env) {
+  const names = doctypes();
   const [customers, sites, contacts, equipment, fields] = await Promise.all([
-    erpList(env, "Customer", { fields: ["name", "customer_name"], orderBy: "customer_name asc" }),
-    erpList(env, "Customer Site", { fields: ["name", "customer"], orderBy: "name asc" }),
-    erpList(env, "Contact", { fields: ["name", "full_name"], orderBy: "name asc", limit: 200 }),
-    erpList(env, "Customer Equipment", { fields: ["name", "customer", "item_name", "serial_no", "equipment_id"] }),
-    selectFields(env),
+    erpList(env, names.customer, { fields: ["name", "customer_name"], orderBy: "customer_name asc" }),
+    erpList(env, names.site, { fields: ["name", "customer"], orderBy: "name asc" }),
+    erpList(env, names.contact, { fields: ["name", "full_name"], orderBy: "name asc", limit: 200 }),
+    erpList(env, names.equipment, { fields: ["name", "customer", "item_name", "serial_no", "equipment_id"] }),
+    selectFields(env, names.ticket),
   ]);
   return {
     customers: customers.map((row) => ({ name: row.name, label: row.customer_name || row.name })),
@@ -121,22 +528,24 @@ async function loadOptions(env) {
 }
 
 async function loadTickets(env) {
-  const rows = await erpList(env, "Service Ticket", { fields: TICKET_FIELDS, orderBy: "modified desc" });
+  const rows = await erpList(env, doctypes().ticket, { fields: TICKET_FIELDS, orderBy: "modified desc" });
   const files = await loadTicketFiles(env);
   return rows.map((row) => mapTicket(row, files.get(row.name)));
 }
 
 async function loadTicket(env, name) {
   if (!/^ST-\d{4}-\d+$/.test(name)) return null;
-  const body = await erp(env, `/api/resource/${encodeURIComponent("Service Ticket")}/${encodeURIComponent(name)}`);
+  const ticket = doctypes().ticket;
+  const body = await erp(env, `/api/resource/${encodeURIComponent(ticket)}/${encodeURIComponent(name)}`);
   return mapTicket(body.data, await loadTicketFiles(env, name));
 }
 
 async function loadTicketFiles(env, name) {
+  const names = doctypes();
   try {
-    const filters = [["attached_to_doctype", "=", "Service Ticket"]];
+    const filters = [["attached_to_doctype", "=", names.ticket]];
     if (name) filters.push(["attached_to_name", "=", name]);
-    const rows = await erpList(env, "File", {
+    const rows = await erpList(env, names.file, {
       fields: ["name", "file_name", "attached_to_name"],
       filters,
       limit: 500,
@@ -177,7 +586,7 @@ async function createTicket(env, input) {
   if (complaint) payload.customer_complaint = complaint;
   if (description) payload.description = toHtml(description);
 
-  const created = await erp(env, `/api/resource/${encodeURIComponent("Service Ticket")}`, {
+  const created = await erp(env, `/api/resource/${encodeURIComponent(doctypes().ticket)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -195,12 +604,11 @@ async function uploadBuffer(env, docname, { filename, type, buffer }) {
   const safeName = safeFilename(filename, type || (kind === "video" ? "video/mp4" : "image/jpeg"));
   const form = new FormData();
   form.append("file", new Blob([buffer], { type: type || "application/octet-stream" }), safeName);
-  form.append("doctype", "Service Ticket");
+  form.append("doctype", doctypes().ticket);
   form.append("docname", docname);
   form.append("is_private", "1");
-  const response = await fetch(`${env.url}/api/method/upload_file`, {
+  const response = await erpFetch(env, "/api/method/upload_file", {
     method: "POST",
-    headers: { Authorization: `token ${env.token}`, Accept: "application/json" },
     body: form,
   });
   const body = await response.json().catch(() => ({}));
@@ -213,14 +621,15 @@ async function uploadBuffer(env, docname, { filename, type, buffer }) {
 
 async function sendFile(env, res, name) {
   if (!/^[\w.-]+$/.test(name)) throw httpError(400, "Unknown file.");
-  const doc = await erp(env, `/api/resource/File/${encodeURIComponent(name)}`);
+  const names = doctypes();
+  const doc = await erp(env, `/api/resource/${encodeURIComponent(names.file)}/${encodeURIComponent(name)}`);
   const fileUrl = doc.data?.file_url;
   if (!fileUrl || !fileUrl.startsWith("/")) throw httpError(404, "File not found.");
-  if (doc.data.attached_to_doctype && doc.data.attached_to_doctype !== "Service Ticket") {
+  if (doc.data.attached_to_doctype && doc.data.attached_to_doctype !== names.ticket) {
     throw httpError(404, "File not found.");
   }
-  const download = await fetch(`${env.url}${fileUrl}`, {
-    headers: { Authorization: `token ${env.token}` },
+  const download = await erpFetch(env, fileUrl, {
+    headers: { Accept: "*/*" },
   });
   if (!download.ok) throw httpError(download.status, "Could not download the file.");
   const bytes = Buffer.from(await download.arrayBuffer());
@@ -230,11 +639,11 @@ async function sendFile(env, res, name) {
   res.end(bytes);
 }
 
-async function selectFields(env) {
+async function selectFields(env, ticket = doctypes().ticket) {
   try {
-    const body = await erp(env, `/api/method/frappe.desk.form.load.getdoctype?doctype=${encodeURIComponent("Service Ticket")}`);
+    const body = await erp(env, `/api/method/frappe.desk.form.load.getdoctype?doctype=${encodeURIComponent(ticket)}`);
     const docs = body.docs || body.message?.docs || [];
-    const doc = docs.find((item) => item.name === "Service Ticket") || docs[0];
+    const doc = docs.find((item) => item.name === ticket) || docs[0];
     const fields = doc?.fields || [];
     return {
       ticketTypes: selectOptions(fields, "ticket_type"),
@@ -277,15 +686,8 @@ async function erpList(env, doctype, { fields, filters, limit = 100, orderBy } =
   return body.data || [];
 }
 
-async function erp(env, path, options = {}) {
-  const response = await fetch(`${env.url}${path}`, {
-    ...options,
-    headers: {
-      Authorization: `token ${env.token}`,
-      Accept: "application/json",
-      ...options.headers,
-    },
-  });
+async function erp(env, requestPath, options = {}) {
+  const response = await erpFetch(env, requestPath, options);
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw httpError(response.status, erpMessage(body));
   return body;

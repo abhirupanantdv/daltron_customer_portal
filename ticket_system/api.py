@@ -1,8 +1,13 @@
+import json
 import re
+from pathlib import Path
 
 import frappe
 from frappe import _
 from frappe.utils.file_manager import save_file
+
+DOCTYPES_PATH = Path(__file__).resolve().parent.parent / "config" / "doctypes.json"
+DOCTYPE_KEYS = ("ticket", "customer", "site", "contact", "equipment", "file")
 
 TICKET_FIELDS = [
     "name",
@@ -34,25 +39,45 @@ TICKET_NAME = re.compile(r"^ST-\d{4}-\d+$")
 FILE_NAME = re.compile(r"^[\w.-]+$")
 
 
+def _doctypes():
+    try:
+        data = json.loads(DOCTYPES_PATH.read_text(encoding="utf-8"))
+    except OSError:
+        frappe.throw(_("Doctype library was not found at {0}.").format(DOCTYPES_PATH))
+    except json.JSONDecodeError:
+        frappe.throw(_("Doctype library at {0} is not valid JSON.").format(DOCTYPES_PATH))
+    if not isinstance(data, dict):
+        frappe.throw(_("Doctype library at {0} must be a JSON object.").format(DOCTYPES_PATH))
+    names = {}
+    for key in DOCTYPE_KEYS:
+        value = str(data.get(key) or "").strip()
+        if not value:
+            frappe.throw(_("Doctype library is missing {0}.").format(key))
+        names[key] = value
+    return names
+
+
 def check_app_permission():
     if frappe.session.user == "Guest":
         return False
     if "System Manager" in frappe.get_roles():
         return True
-    if not frappe.db.exists("DocType", "Service Ticket"):
+    ticket = _doctypes()["ticket"]
+    if not frappe.db.exists("DocType", ticket):
         return False
-    return bool(frappe.has_permission("Service Ticket", "read"))
+    return bool(frappe.has_permission(ticket, "read"))
 
 
 @frappe.whitelist()
 def get_options():
     meta = _ticket_meta()
+    names = _doctypes()
     categories = _select_options(meta, "service_category") or CATEGORY_FALLBACK
     priorities = _select_options(meta, "priority") or PRIORITY_FALLBACK
     return {
-        "customers": _link_rows("Customer", ["name", "customer_name"], "customer_name asc", lambda row: row.customer_name or row.name),
-        "sites": _link_rows("Customer Site", ["name", "customer"], "name asc", lambda row: row.name, extra=lambda row: {"customer": row.customer or ""}),
-        "contacts": _link_rows("Contact", ["name", "full_name"], "name asc", lambda row: row.full_name or row.name, limit=200),
+        "customers": _link_rows(names["customer"], ["name", "customer_name"], "customer_name asc", lambda row: row.customer_name or row.name),
+        "sites": _link_rows(names["site"], ["name", "customer"], "name asc", lambda row: row.name, extra=lambda row: {"customer": row.customer or ""}),
+        "contacts": _link_rows(names["contact"], ["name", "full_name"], "name asc", lambda row: row.full_name or row.name, limit=200),
         "equipment": _equipment_rows(),
         "ticketTypes": _select_options(meta, "ticket_type"),
         "categories": categories,
@@ -68,7 +93,7 @@ def get_options():
 def get_tickets():
     meta = _ticket_meta()
     fields = _present_fields(meta, TICKET_FIELDS)
-    rows = frappe.get_list("Service Ticket", fields=fields, order_by="modified desc", limit_page_length=100)
+    rows = frappe.get_list(_doctypes()["ticket"], fields=fields, order_by="modified desc", limit_page_length=100)
     files = _files_for([row.name for row in rows])
     return {"tickets": [_map_ticket(row, files.get(row.name, [])) for row in rows]}
 
@@ -84,7 +109,7 @@ def create_ticket():
     if not customer:
         frappe.throw(_("Choose a customer."))
 
-    payload = {"doctype": "Service Ticket", "customer": customer, "subject": subject}
+    payload = {"doctype": _doctypes()["ticket"], "customer": customer, "subject": subject}
     series = "ST-.YYYY.-.#####"
     series_field = meta.get_field("naming_series")
     if series_field:
@@ -122,9 +147,10 @@ def upload_ticket_file():
     ticket = str(frappe.form_dict.get("ticket") or "").strip()
     if not TICKET_NAME.match(ticket):
         frappe.throw(_("Unknown ticket."))
-    if not frappe.db.exists("Service Ticket", ticket):
+    ticket_doctype = _doctypes()["ticket"]
+    if not frappe.db.exists(ticket_doctype, ticket):
         frappe.throw(_("Ticket not found"), frappe.DoesNotExistError)
-    if not frappe.has_permission("Service Ticket", "write", doc=ticket):
+    if not frappe.has_permission(ticket_doctype, "write", doc=ticket):
         frappe.throw(_("You cannot update this ticket."), frappe.PermissionError)
 
     uploaded = frappe.request.files.get("file") if frappe.request else None
@@ -143,7 +169,7 @@ def upload_ticket_file():
         frappe.throw(_("Each video must be under 25 MB.") if kind == "video" else _("Each photo must be under 10 MB."))
 
     safe_name = _safe_filename(filename, mime or ("video/mp4" if kind == "video" else "image/jpeg"))
-    file_doc = save_file(safe_name, content, "Service Ticket", ticket, is_private=1)
+    file_doc = save_file(safe_name, content, ticket_doctype, ticket, is_private=1)
     mapped = _map_file(file_doc.as_dict())
     if not mapped:
         frappe.throw(_("Attachment could not be saved."))
@@ -151,11 +177,12 @@ def upload_ticket_file():
 
 
 def _ticket_meta():
-    if not frappe.db.exists("DocType", "Service Ticket"):
-        frappe.throw(_("Service Ticket is not set up on this site."))
-    if not frappe.has_permission("Service Ticket", "read"):
+    ticket = _doctypes()["ticket"]
+    if not frappe.db.exists("DocType", ticket):
+        frappe.throw(_("{0} is not set up on this site.").format(ticket))
+    if not frappe.has_permission(ticket, "read"):
         frappe.throw(_("You cannot view service tickets."), frappe.PermissionError)
-    return frappe.get_meta("Service Ticket")
+    return frappe.get_meta(ticket)
 
 
 def _request_data():
@@ -224,7 +251,7 @@ def _link_rows(doctype, fields, order_by, label, limit=100, extra=None):
 
 
 def _equipment_rows():
-    doctype = "Customer Equipment"
+    doctype = _doctypes()["equipment"]
     if not frappe.db.exists("DocType", doctype) or not frappe.has_permission(doctype, "read"):
         return []
     meta = frappe.get_meta(doctype)
@@ -245,12 +272,13 @@ def _equipment_rows():
 
 def _files_for(names):
     grouped = {}
-    if not names or not frappe.db.exists("DocType", "File"):
+    doctypes = _doctypes()
+    if not names or not frappe.db.exists("DocType", doctypes["file"]):
         return grouped
     try:
         rows = frappe.get_all(
-            "File",
-            filters={"attached_to_doctype": "Service Ticket", "attached_to_name": ["in", names]},
+            doctypes["file"],
+            filters={"attached_to_doctype": doctypes["ticket"], "attached_to_name": ["in", names]},
             fields=["name", "file_name", "file_url", "attached_to_name"],
             limit_page_length=500,
         )

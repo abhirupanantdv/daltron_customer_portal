@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "@/components/AuthProvider";
 import Logo from "@/components/Logo";
 import TourButton, { startPageTour, usePageTour } from "@/components/ProductTour";
 import { IconHome, IconPlus, IconSearch, IconTickets, IconTour, IconUser, pagePad } from "@/components/ui";
@@ -128,9 +129,12 @@ function NavLinks({ pathname }) {
 }
 
 function AccountMenu() {
+  const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const { pathname } = useLocation();
   const ref = useRef(null);
+  const name = user?.fullName || "Account";
+  const detail = user?.user && user.user !== name ? user.user : "";
 
   useEffect(() => {
     setOpen(false);
@@ -167,8 +171,8 @@ function AccountMenu() {
       </button>
       {open ? (
         <div role="menu" className="absolute right-0 top-11 w-56 rounded-2xl bg-surface p-4 text-ink shadow-[0_18px_50px_rgba(9,31,43,0.18)] ring-1 ring-ink/10 dark:shadow-[0_18px_50px_rgba(0,0,0,0.45)]">
-          <p className="text-sm font-medium">Maya Chen</p>
-          <p className="mt-0.5 text-xs text-mute">Acme Studio</p>
+          <p className="text-sm font-medium">{name}</p>
+          {detail ? <p className="mt-0.5 truncate text-xs text-mute">{detail}</p> : null}
           <Link to="/tickets" role="menuitem" className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-ink">
             <IconTickets className="size-4" />
             Your tickets
@@ -184,6 +188,13 @@ function AccountMenu() {
           >
             <IconTour className="size-4" />
             Replay tutorial
+          </button>
+          <button type="button" role="menuitem" className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-ink" onClick={() => logout()}>
+            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <path d="M10 7V5.5A1.5 1.5 0 0 1 11.5 4h7A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 10 18.5V17" strokeLinecap="round" />
+              <path d="M4 12h10M11 8.5 14.5 12 11 15.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Sign out
           </button>
         </div>
       ) : null}

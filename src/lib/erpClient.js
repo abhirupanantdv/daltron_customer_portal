@@ -1,3 +1,5 @@
+import { appLoginHref } from "@/lib/auth";
+
 const CHAT_KEY = "cove.erp.chat.v1";
 const ON_SITE = import.meta.env.PROD;
 
@@ -58,6 +60,11 @@ function errorMessage(body) {
   return ON_SITE ? "The ticket service rejected the request." : "ERPNext request failed";
 }
 
+function onLoginPage() {
+  const path = window.location.pathname;
+  return path === "/login" || path === "/ticket/login" || path.startsWith("/ticket/login/");
+}
+
 function stripHtml(value) {
   return String(value)
     .replace(/<[^>]+>/g, "")
@@ -76,9 +83,9 @@ async function readJson(response) {
   } catch {
     throw new Error(ON_SITE ? "The ticket service is not available." : "The ticket service is not available. Restart the dev server.");
   }
-  if (response.status === 401 && ON_SITE && !window.location.pathname.startsWith("/login")) {
+  if (response.status === 401 && !onLoginPage()) {
     const next = `${window.location.pathname}${window.location.search}`;
-    window.location.assign(`/login?redirect-to=${encodeURIComponent(next)}`);
+    window.location.assign(`${appLoginHref()}?redirect-to=${encodeURIComponent(next)}`);
     throw new Error("Sign in to continue.");
   }
   if (!response.ok) throw new Error(errorMessage(body));

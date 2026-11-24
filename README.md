@@ -7,8 +7,8 @@ After installation:
 - `https://<existing-host>/` redirects to `/ticket`
 - `/ticket` is the support app
 - `/ticket/tickets`, `/ticket/tickets/new`, and ticket chat routes stay on that page
-- The app is the site default app, so signing in from `/ticket` returns there
-- Guests sign in with their existing ERPNext account. Ticket access follows Service Ticket permissions.
+- The app is the site default app. Signing in on `/ticket/login` returns to the page you asked for
+- Guests sign in on the support login page with their existing ERPNext account. Ticket access follows Service Ticket permissions.
 
 ## Install on the bench that already serves this site
 
@@ -31,4 +31,4 @@ bench --site <existing-site> clear-cache
 bench restart
 ```
 
-`npm run dev` is only for local UI work. It still proxies `/api/erp` using `ERPNEXT_URL` and `ERPNEXT_TOKEN` in `.env`. The installed app does not use that token. It uses the logged-in session on the site.
+`npm run dev` is only for local UI work. It proxies `/api/erp` to the server in `.env`. Sign in on the login page with an account on that server. The proxy keeps that browser session for later requests. `ERPNEXT_URL` is required. `ERPNEXT_USER` and `ERPNEXT_PASSWORD`, or `ERPNEXT_TOKEN`, remain a fallback for API calls made without a browser session. Changing the URL in `.env` switches servers on the next request. The installed app does not use those values. It uses the session from the login page.
