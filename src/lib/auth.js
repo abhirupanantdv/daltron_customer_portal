@@ -48,22 +48,21 @@ export async function signIn({ usr, pwd, otp, tmpId }) {
 }
 
 export async function signOut() {
-  try {
-    if (ON_SITE) {
-      await fetch("/api/method/logout", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          Accept: "application/json",
-          "X-Frappe-CSRF-Token": csrfToken(),
-        },
-      });
-    } else {
-      await fetch("/api/erp/logout", { method: "POST" });
-    }
-  } catch {
-    // A failed logout still leaves the login page. The next sign-in replaces the session.
+  if (!ON_SITE) {
+    const response = await fetch("/api/erp/logout", { method: "POST" });
+    if (!response.ok) throw new Error("Could not sign out.");
+    window.location.assign(appLoginHref());
+    return;
   }
+  const response = await fetch("/api/method/logout", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+      "X-Frappe-CSRF-Token": await csrfToken(),
+    },
+  });
+  if (!response.ok) throw new Error("Could not sign out.");
   window.location.assign(appLoginHref());
 }
 
@@ -89,7 +88,7 @@ async function siteSignIn({ usr, pwd, otp, tmpId }) {
     headers: {
       Accept: "application/json",
       "Content-Type": "application/x-www-form-urlencoded",
-      "X-Frappe-CSRF-Token": csrfToken(),
+      "X-Frappe-CSRF-Token": await csrfToken(),
     },
     body,
   });
@@ -109,10 +108,17 @@ async function siteSignIn({ usr, pwd, otp, tmpId }) {
   };
 }
 
-function csrfToken() {
+async function csrfToken() {
   const fromPage = window.frappe?.csrf_token;
   if (fromPage && fromPage !== "{{ csrf_token }}") return fromPage;
-  return cookieValue("csrf_token");
+  const fromCookie = cookieValue("csrf_token");
+  if (fromCookie) return fromCookie;
+  const response = await fetch("/api/method/frappe.sessions.get_csrf_token", {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+  });
+  const body = await response.json().catch(() => ({}));
+  return typeof body.message === "string" ? body.message : "";
 }
 
 function cookieValue(name) {

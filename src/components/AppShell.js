@@ -131,6 +131,7 @@ function NavLinks({ pathname }) {
 function AccountMenu() {
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
+  const [signOutError, setSignOutError] = useState("");
   const { pathname } = useLocation();
   const ref = useRef(null);
   const name = user?.fullName || "Account";
@@ -189,13 +190,26 @@ function AccountMenu() {
             <IconTour className="size-4" />
             Replay tutorial
           </button>
-          <button type="button" role="menuitem" className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-ink" onClick={() => logout()}>
+          <button
+            type="button"
+            role="menuitem"
+            className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-ink"
+            onClick={async () => {
+              setSignOutError("");
+              try {
+                await logout();
+              } catch (err) {
+                setSignOutError(err instanceof Error ? err.message : "Could not sign out.");
+              }
+            }}
+          >
             <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
               <path d="M10 7V5.5A1.5 1.5 0 0 1 11.5 4h7A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 10 18.5V17" strokeLinecap="round" />
               <path d="M4 12h10M11 8.5 14.5 12 11 15.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             Sign out
           </button>
+          {signOutError ? <p className="mt-2 text-xs text-ink">{signOutError}</p> : null}
         </div>
       ) : null}
     </div>
