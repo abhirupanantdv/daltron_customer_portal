@@ -74,24 +74,104 @@ def _portal_customer():
         return ""
     names = _doctypes()
     customer_doctype = names["customer"]
-    if frappe.db.exists("DocType", customer_doctype):
-        customer_meta = frappe.get_meta(customer_doctype)
-        if customer_meta.has_field("email_id"):
-            found = frappe.db.get_value(customer_doctype, {"email_id": user}, "name")
-            if found:
-                return found
-    contact_doctype = names["contact"]
-    contact = ""
-    if frappe.db.exists("DocType", contact_doctype):
-        contact_meta = frappe.get_meta(contact_doctype)
-        if contact_meta.has_field("user"):
-            contact = frappe.db.get_value(contact_doctype, {"user": user}, "name") or ""
-        if not contact and contact_meta.has_field("email_id"):
-            contact = frappe.db.get_value(contact_doctype, {"email_id": user}, "name") or ""
-    if contact and frappe.db.exists("DocType", customer_doctype) and frappe.get_meta(customer_doctype).has_field("customer_primary_contact"):
-        found = frappe.db.get_value(customer_doctype, {"customer_primary_contact": contact}, "name")
+    emails = _portal_emails(user)
+
+    found = _customer_from_portal_user(user, customer_doctype)
+    if found:
+        return found
+    found = _customer_by_email(customer_doctype, emails)
+    if found:
+        return found
+
+    contact = _portal_contact(user, emails, names["contact"])
+    if not contact:
+        return ""
+    found = _customer_from_primary_contact(customer_doctype, contact)
+    if found:
+        return found
+    return _customer_from_contact_link(names["contact"], contact, customer_doctype)
+
+
+def _portal_emails(user):
+    emails = []
+    if user and "@" in user:
+        emails.append(user)
+    email = _portal_user_email()
+    if email and email not in emails:
+        emails.append(email)
+    return emails
+
+
+def _customer_from_portal_user(user, customer_doctype):
+    if not frappe.db.exists("DocType", "Portal User"):
+        return ""
+    meta = frappe.get_meta("Portal User")
+    if not meta.istable or not meta.has_field("user"):
+        return ""
+    if not frappe.db.exists("DocType", customer_doctype):
+        return ""
+    found = frappe.db.get_value("Portal User", {"parenttype": customer_doctype, "user": user}, "parent")
+    if found and frappe.db.exists(customer_doctype, found):
+        return found
+    return ""
+
+
+def _customer_by_email(customer_doctype, emails):
+    if not emails or not frappe.db.exists("DocType", customer_doctype):
+        return ""
+    if not frappe.get_meta(customer_doctype).has_field("email_id"):
+        return ""
+    for email in emails:
+        found = frappe.db.get_value(customer_doctype, {"email_id": email}, "name")
         if found:
             return found
+    return ""
+
+
+def _portal_contact(user, emails, contact_doctype):
+    if not frappe.db.exists("DocType", contact_doctype):
+        return ""
+    meta = frappe.get_meta(contact_doctype)
+    if meta.has_field("user"):
+        contact = frappe.db.get_value(contact_doctype, {"user": user}, "name")
+        if contact:
+            return contact
+    if meta.has_field("email_id"):
+        for email in emails:
+            contact = frappe.db.get_value(contact_doctype, {"email_id": email}, "name")
+            if contact:
+                return contact
+    if not frappe.db.exists("DocType", "Contact Email"):
+        return ""
+    for email in emails:
+        contact = frappe.db.get_value(
+            "Contact Email",
+            {"email_id": email, "parenttype": contact_doctype},
+            "parent",
+        )
+        if contact and frappe.db.exists(contact_doctype, contact):
+            return contact
+    return ""
+
+
+def _customer_from_primary_contact(customer_doctype, contact):
+    if not frappe.db.exists("DocType", customer_doctype):
+        return ""
+    if not frappe.get_meta(customer_doctype).has_field("customer_primary_contact"):
+        return ""
+    return frappe.db.get_value(customer_doctype, {"customer_primary_contact": contact}, "name") or ""
+
+
+def _customer_from_contact_link(contact_doctype, contact, customer_doctype):
+    if not frappe.db.exists("DocType", "Dynamic Link") or not frappe.db.exists("DocType", customer_doctype):
+        return ""
+    found = frappe.db.get_value(
+        "Dynamic Link",
+        {"parent": contact, "parenttype": contact_doctype, "link_doctype": customer_doctype},
+        "link_name",
+    )
+    if found and frappe.db.exists(customer_doctype, found):
+        return found
     return ""
 
 
