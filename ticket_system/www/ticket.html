@@ -11,10 +11,12 @@
       content="Open a support ticket, see the status of every ticket you created, and chat only if you want to."
     />
     <title>AnantDV — Customer support</title>
-    <script type="module" crossorigin src="/assets/ticket_system/ticket/assets/index-Bx-z30Mo.js"></script>
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <script>window.csrf_token = document.querySelector('meta[name="csrf-token"]').content;</script>
+    <script type="module" crossorigin src="/assets/ticket_system/ticket/assets/index-C_gEfBUR.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/ticket_system/ticket/assets/index-DLuIio2g.css">
   </head>
   <body class="min-h-dvh bg-transparent text-ink">
     <div id="root"></div>
-  </body>
+  </body> 
 </html>

@@ -1,4 +1,4 @@
-import { appLoginHref } from "@/lib/auth";
+import { appLoginHref, csrfHeaders } from "@/lib/auth";
 
 const CHAT_KEY = "cove.erp.chat.v1";
 const ON_SITE = import.meta.env.PROD;
@@ -76,7 +76,7 @@ async function readJson(response) {
   } catch {
     throw new Error(ON_SITE ? "The ticket service is not available." : "The ticket service is not available. Restart the dev server.");
   }
-  if (response.status === 401 && !onLoginPage()) {
+  if (needsSignIn(response.status, body) && !onLoginPage()) {
     const next = `${window.location.pathname}${window.location.search}`;
     window.location.assign(`${appLoginHref()}?redirect-to=${encodeURIComponent(next)}`);
     throw new Error("Sign in to continue.");
@@ -85,15 +85,24 @@ async function readJson(response) {
   return body.message ?? body;
 }
 
+function needsSignIn(status, body) {
+  if (status === 401) return true;
+  if (status !== 403) return false;
+  return /not whitelisted|login to access|session expired/i.test(errorMessage(body));
+}
+
 async function siteCall(method, { method: httpMethod = "GET", body, headers } = {}) {
+  const verb = String(httpMethod || "GET").toUpperCase();
+  const write = verb !== "GET" && verb !== "HEAD";
   const response = await fetch(`/api/method/ticket_system.api.${method}`, {
-    method: httpMethod,
+    method: verb,
     credentials: "same-origin",
     headers: {
       Accept: "application/json",
+      ...(write ? csrfHeaders() : {}),
       ...headers,
     },
-    body,
+    ...(body == null || !write ? {} : { body }),
   });
   return readJson(response);
 }
