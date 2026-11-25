@@ -1,4 +1,4 @@
-import { appLoginHref } from "@/lib/auth";
+import { appLoginHref, csrfHeaders } from "@/lib/auth";
 
 const CHAT_KEY = "cove.erp.chat.v1";
 const ON_SITE = import.meta.env.PROD;
@@ -91,6 +91,7 @@ async function siteCall(method, { method: httpMethod = "GET", body, headers } = 
     credentials: "same-origin",
     headers: {
       Accept: "application/json",
+      ...(httpMethod === "GET" || httpMethod === "HEAD" ? {} : csrfHeaders()),
       ...headers,
     },
     body,

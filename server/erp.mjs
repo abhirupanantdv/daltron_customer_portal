@@ -377,11 +377,14 @@ async function authHeaders(env, { method = "GET", headers = {} } = {}) {
   if (!session) {
     return { Accept: "application/json", Authorization: `token ${env.token}`, ...headers };
   }
-  return {
+  const next = {
     Accept: "application/json",
     Cookie: cookieHeader(session.jar),
     ...headers,
   };
+  const csrf = cookieText(session.jar.get("csrf_token")?.value || "");
+  if (csrf && !["GET", "HEAD", "OPTIONS"].includes(method)) next["X-Frappe-CSRF-Token"] = csrf;
+  return next;
 }
 
 async function erpFetch(env, requestPath, options = {}) {
@@ -595,7 +598,8 @@ async function createTicket(env, input) {
   };
   assign(payload, "customer_site", input.customerSite);
   assign(payload, "contact_person", input.contactPerson);
-  assign(payload, "contact_email", input.contactEmail);
+  const portalEmail = String(env._portalUser || "").trim();
+  assign(payload, "contact_email", portalEmail.includes("@") ? portalEmail : "");
   assign(payload, "contact_mobile", input.contactMobile);
   assign(payload, "reported_by", input.reportedBy);
   assign(payload, "customer_equipment", input.customerEquipment);

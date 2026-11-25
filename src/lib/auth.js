@@ -86,6 +86,7 @@ async function siteSignIn({ usr, pwd, otp, tmpId }) {
     headers: {
       Accept: "application/json",
       "Content-Type": "application/x-www-form-urlencoded",
+      ...csrfHeaders(),
     },
     body,
   });
@@ -103,6 +104,11 @@ async function siteSignIn({ usr, pwd, otp, tmpId }) {
     user: cookieValue("user_id") || usr,
     fullName: payload.full_name || cookieValue("full_name") || usr,
   };
+}
+
+export function csrfHeaders() {
+  const token = (typeof window !== "undefined" && window.csrf_token) || cookieValue("csrf_token");
+  return token ? { "X-Frappe-CSRF-Token": token } : {};
 }
 
 function cookieValue(name) {

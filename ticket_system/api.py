@@ -95,6 +95,19 @@ def _portal_customer():
     return ""
 
 
+def _portal_user_email():
+    user = frappe.session.user
+    if not user or user == "Guest":
+        return ""
+    if "@" in user:
+        return user
+    if frappe.db.exists("DocType", "User") and frappe.db.exists("User", user):
+        email = frappe.db.get_value("User", user, "email") or ""
+        if "@" in email:
+            return email
+    return ""
+
+
 @frappe.whitelist()
 def get_options():
     meta = _ticket_meta()
@@ -162,7 +175,7 @@ def create_ticket():
 
     _assign(payload, meta, "customer_site", data.get("customerSite"))
     _assign(payload, meta, "contact_person", data.get("contactPerson"))
-    _assign(payload, meta, "contact_email", data.get("contactEmail"))
+    _assign(payload, meta, "contact_email", _portal_user_email())
     _assign(payload, meta, "contact_mobile", data.get("contactMobile"))
     _assign(payload, meta, "reported_by", data.get("reportedBy"))
     _assign(payload, meta, "customer_equipment", data.get("customerEquipment"))
