@@ -114,7 +114,7 @@ function pageCsrfToken() {
 }
 
 export function csrfHeaders() {
-  const token = cookieValue("csrf_token") || pageCsrfToken();
+  const token = pageCsrfToken() || cookieValue("csrf_token");
   if (token && typeof window !== "undefined") window.csrf_token = token;
   return token ? { "X-Frappe-CSRF-Token": token } : {};
 }

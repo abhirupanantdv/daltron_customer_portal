@@ -32,7 +32,7 @@ function frappePage() {
       const html = fs.readFileSync(path.join(ticketDir, "index.html"), "utf8");
       const page = html.replace(
         "<!-- csrf_token -->",
-        "<script>window.csrf_token={{ csrf_token | tojson }};</script>",
+        "<meta name=\"csrf-token\" content=\"{{ csrf_token }}\">\n    <script>window.csrf_token = document.querySelector('meta[name=\"csrf-token\"]').content;</script>",
       );
       const www = path.resolve(root, "ticket_system/www");
       fs.mkdirSync(www, { recursive: true });
