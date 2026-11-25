@@ -106,8 +106,16 @@ async function siteSignIn({ usr, pwd, otp, tmpId }) {
   };
 }
 
+function pageCsrfToken() {
+  if (typeof window === "undefined" || typeof window.csrf_token !== "string") return "";
+  const token = window.csrf_token.trim();
+  if (!token || token.includes("{") || token.includes("}")) return "";
+  return token;
+}
+
 export function csrfHeaders() {
-  const token = (typeof window !== "undefined" && window.csrf_token) || cookieValue("csrf_token");
+  const token = cookieValue("csrf_token") || pageCsrfToken();
+  if (token && typeof window !== "undefined") window.csrf_token = token;
   return token ? { "X-Frappe-CSRF-Token": token } : {};
 }
 
