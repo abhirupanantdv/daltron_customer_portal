@@ -30,7 +30,10 @@ function frappePage() {
     apply: "build",
     closeBundle() {
       const html = fs.readFileSync(path.join(ticketDir, "index.html"), "utf8");
-      const page = html.replace(/\s*<!-- csrf_token -->\s*/g, "\n");
+      const page = html.replace(
+        "<!-- csrf_token -->",
+        "<script>window.csrf_token={{ csrf_token | tojson }};</script>",
+      );
       const www = path.resolve(root, "ticket_system/www");
       fs.mkdirSync(www, { recursive: true });
       fs.writeFileSync(path.join(www, "ticket.html"), page);

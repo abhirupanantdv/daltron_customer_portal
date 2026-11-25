@@ -86,6 +86,7 @@ async function siteSignIn({ usr, pwd, otp, tmpId }) {
     headers: {
       Accept: "application/json",
       "Content-Type": "application/x-www-form-urlencoded",
+      ...csrfHeaders(),
     },
     body,
   });
@@ -103,6 +104,19 @@ async function siteSignIn({ usr, pwd, otp, tmpId }) {
     user: cookieValue("user_id") || usr,
     fullName: payload.full_name || cookieValue("full_name") || usr,
   };
+}
+
+function pageCsrfToken() {
+  if (typeof window === "undefined" || typeof window.csrf_token !== "string") return "";
+  const token = window.csrf_token.trim();
+  if (!token || token.includes("{") || token.includes("}")) return "";
+  return token;
+}
+
+export function csrfHeaders() {
+  const token = cookieValue("csrf_token") || pageCsrfToken();
+  if (token && typeof window !== "undefined") window.csrf_token = token;
+  return token ? { "X-Frappe-CSRF-Token": token } : {};
 }
 
 function cookieValue(name) {
