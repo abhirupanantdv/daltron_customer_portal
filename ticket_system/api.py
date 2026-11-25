@@ -74,16 +74,17 @@ def _portal_customer():
         return ""
     names = _doctypes()
     customer_doctype = names["customer"]
-    emails = _portal_emails(user)
+    ids = _account_ids(user)
+    emails = _portal_emails(ids)
 
-    found = _customer_from_portal_user(user, customer_doctype)
+    found = _customer_from_portal_user(ids, customer_doctype)
     if found:
         return found
     found = _customer_by_email(customer_doctype, emails)
     if found:
         return found
 
-    contact = _portal_contact(user, emails, names["contact"])
+    contact = _portal_contact(ids, emails, names["contact"])
     if not contact:
         return ""
     found = _customer_from_primary_contact(customer_doctype, contact)
@@ -92,25 +93,65 @@ def _portal_customer():
     return _customer_from_contact_link(names["contact"], contact, customer_doctype)
 
 
-def _portal_emails(user):
-    emails = []
-    if user and "@" in user:
-        emails.append(user)
-    email = _portal_user_email()
-    if email and email not in emails:
-        emails.append(email)
-    return emails
+def _account_ids(user):
+    ids = []
+
+    def add(value):
+        text = str(value or "").strip()
+        if not text or any(text.lower() == existing.lower() for existing in ids):
+            return
+        ids.append(text)
+
+    add(user)
+    if not user or user == "Guest" or not frappe.db.exists("DocType", "User"):
+        return ids
+
+    meta = frappe.get_meta("User")
+    name = user if frappe.db.exists("User", user) else ""
+    if not name and meta.has_field("username"):
+        name = frappe.db.get_value("User", {"username": user}, "name") or ""
+    if not name and meta.has_field("email") and "@" in user:
+        name = frappe.db.get_value("User", {"email": user}, "name") or ""
+    if not name:
+        return ids
+
+    add(name)
+    fields = [field for field in ("email", "username") if meta.has_field(field)]
+    if not fields:
+        return ids
+    values = frappe.db.get_value("User", name, fields)
+    if values is None:
+        return ids
+    if len(fields) == 1:
+        values = (values,)
+    for value in values:
+        add(value)
+    return ids
 
 
-def _customer_from_portal_user(user, customer_doctype):
-    if not frappe.db.exists("DocType", "Portal User"):
+def _portal_emails(ids):
+    return [item for item in ids if "@" in item]
+
+
+def _customer_from_portal_user(ids, customer_doctype):
+    if not ids or not frappe.db.exists("DocType", "Portal User"):
         return ""
     meta = frappe.get_meta("Portal User")
     if not meta.istable or not meta.has_field("user"):
         return ""
     if not frappe.db.exists("DocType", customer_doctype):
         return ""
-    found = frappe.db.get_value("Portal User", {"parenttype": customer_doctype, "user": user}, "parent")
+    lowered = tuple(dict.fromkeys(item.lower() for item in ids))
+    rows = frappe.db.sql(
+        """
+        select parent
+        from `tabPortal User`
+        where parenttype = %s and lower(`user`) in %s
+        limit 1
+        """,
+        (customer_doctype, lowered),
+    )
+    found = rows[0][0] if rows else ""
     if found and frappe.db.exists(customer_doctype, found):
         return found
     return ""
@@ -128,14 +169,15 @@ def _customer_by_email(customer_doctype, emails):
     return ""
 
 
-def _portal_contact(user, emails, contact_doctype):
+def _portal_contact(ids, emails, contact_doctype):
     if not frappe.db.exists("DocType", contact_doctype):
         return ""
     meta = frappe.get_meta(contact_doctype)
     if meta.has_field("user"):
-        contact = frappe.db.get_value(contact_doctype, {"user": user}, "name")
-        if contact:
-            return contact
+        for user in ids:
+            contact = frappe.db.get_value(contact_doctype, {"user": user}, "name")
+            if contact:
+                return contact
     if meta.has_field("email_id"):
         for email in emails:
             contact = frappe.db.get_value(contact_doctype, {"email_id": email}, "name")
@@ -179,13 +221,15 @@ def _portal_user_email():
     user = frappe.session.user
     if not user or user == "Guest":
         return ""
-    if "@" in user:
-        return user
-    if frappe.db.exists("DocType", "User") and frappe.db.exists("User", user):
-        email = frappe.db.get_value("User", user, "email") or ""
-        if "@" in email:
-            return email
-    return ""
+    emails = _portal_emails(_account_ids(user))
+    return emails[0] if emails else ""
+
+
+@frappe.whitelist()
+def portal_customer():
+    if not frappe.session.user or frappe.session.user == "Guest":
+        frappe.throw(_("Sign in to continue."), frappe.PermissionError)
+    return _portal_customer()
 
 
 @frappe.whitelist()

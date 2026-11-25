@@ -208,9 +208,37 @@ async function loginWithCredentials(url, { usr, pwd, otp, tmpId }) {
   rememberCookies(jar, setCookiesFrom(response));
   if (!jar.get("sid")?.value) throw httpError(401, "Login did not return a session.");
   const session = { jar };
-  const user = cookieText(jar.get("user_id")?.value) || usr;
+  const logged = await loggedUser(url, { Cookie: cookieHeader(session.jar) });
+  const user = logged || cookieText(jar.get("user_id")?.value) || usr;
   const fullName = cookieText(jar.get("full_name")?.value) || payload.full_name || user;
   return { status: "ok", session, user, fullName };
+}
+
+async function loggedUser(url, headers) {
+  try {
+    const response = await fetch(`${url}/api/method/frappe.auth.get_logged_user`, {
+      headers: { Accept: "application/json", ...headers },
+    });
+    const payload = await response.json().catch(() => ({}));
+    const user = typeof payload.message === "string" ? payload.message.trim() : "";
+    if (!response.ok || !user || user === "Guest") return "";
+    return user;
+  } catch {
+    return "";
+  }
+}
+
+async function loggedUserForEnv(env) {
+  if (env.user && env.password) {
+    const session = await ensureSession(env);
+    if (session) {
+      const user = await loggedUser(env.url, { Cookie: cookieHeader(session.jar) });
+      if (user) return user;
+      return env.user;
+    }
+  }
+  if (!env.token) return "";
+  return loggedUser(env.url, { Authorization: `token ${env.token}` });
 }
 
 function cookieText(value) {
@@ -253,15 +281,21 @@ function browserSessionFor(req, url) {
   return { ...entry, id };
 }
 
-function scopeEnv(env, req) {
+async function scopeEnv(env, req) {
   const entry = browserSessionFor(req, env.url);
   if (entry) {
-    const portal = { ...env, _browser: true, _browserId: entry.id, _portalUser: entry.user };
-    if (env.token) return portal;
-    return { ...portal, token: "", _session: entry.session };
+    return {
+      ...env,
+      token: "",
+      _browser: true,
+      _browserId: entry.id,
+      _portalUser: entry.user,
+      _session: entry.session,
+    };
   }
   if (!envReady(env)) return null;
-  return env;
+  const user = await loggedUserForEnv(env);
+  return user ? { ...env, _portalUser: user } : env;
 }
 
 async function handleLogin(env, req, res) {
@@ -429,7 +463,7 @@ async function route(env, req, res, requestUrl) {
     await handleLogout(env, req, res);
     return;
   }
-  const scoped = scopeEnv(env, req);
+  const scoped = await scopeEnv(env, req);
   if (!scoped) {
     if (!env.url) {
       send(res, 500, { error: "ERPNext is not configured. Add ERPNEXT_URL to .env." });
@@ -480,48 +514,98 @@ async function route(env, req, res, requestUrl) {
 }
 
 async function portalCustomer(env) {
-  const email = String(env._portalUser || "").trim();
-  if (!email) return "";
-  const names = doctypes();
   try {
-    const byEmail = await erpList(env, names.customer, {
-      fields: ["name"],
-      filters: [["email_id", "=", email]],
-      limit: 1,
-    });
-    if (byEmail[0]?.name) return byEmail[0].name;
-  } catch {
-    // This customer list has no email field.
+    const body = await erp(env, "/api/method/ticket_system.api.portal_customer");
+    return String(body.message || "").trim();
+  } catch (error) {
+    if (!methodMissing(error)) throw error;
   }
-  let contactName = "";
+  return portalCustomerFromResources(env);
+}
+
+function methodMissing(error) {
+  const message = String(error?.message || "");
+  return error?.status === 404 || /failed to get method|has no attribute/i.test(message);
+}
+
+async function accountIds(env, user) {
+  const ids = [];
+  const add = (value) => {
+    const text = String(value || "").trim();
+    if (!text || ids.some((item) => item.toLowerCase() === text.toLowerCase())) return;
+    ids.push(text);
+  };
+  add(user);
+  if (!user) return ids;
   try {
-    const byUser = await erpList(env, names.contact, {
-      fields: ["name"],
-      filters: [["user", "=", email]],
-      limit: 1,
-    });
-    contactName = byUser[0]?.name || "";
-    if (!contactName) {
-      const byContactEmail = await erpList(env, names.contact, {
-        fields: ["name"],
-        filters: [["email_id", "=", email]],
-        limit: 1,
-      });
-      contactName = byContactEmail[0]?.name || "";
-    }
+    const body = await erp(env, `/api/resource/User/${encodeURIComponent(user)}`);
+    add(body.data?.name);
+    add(body.data?.email);
+    add(body.data?.username);
   } catch {
-    contactName = "";
+    // A hidden User record still leaves the signed-in id for the Portal User match.
+  }
+  return ids;
+}
+
+async function portalCustomerFromResources(env) {
+  const user = String(env._portalUser || "").trim();
+  if (!user) return "";
+  const names = doctypes();
+  const ids = await accountIds(env, user);
+  const emails = ids.filter((item) => item.includes("@"));
+
+  const portalParent = await firstRow(env, "Portal User", ["parent"], [
+    ["parenttype", "=", names.customer],
+    ["user", "in", ids],
+  ]);
+  if (portalParent?.parent) return portalParent.parent;
+
+  for (const email of emails) {
+    const byEmail = await firstRow(env, names.customer, ["name"], [["email_id", "=", email]]);
+    if (byEmail?.name) return byEmail.name;
+  }
+
+  let contactName = "";
+  for (const id of ids) {
+    contactName = (await firstRow(env, names.contact, ["name"], [["user", "=", id]]))?.name || "";
+    if (contactName) break;
+  }
+  if (!contactName) {
+    for (const email of emails) {
+      contactName = (await firstRow(env, names.contact, ["name"], [["email_id", "=", email]]))?.name || "";
+      if (contactName) break;
+      contactName =
+        (
+          await firstRow(env, "Contact Email", ["parent"], [
+            ["email_id", "=", email],
+            ["parenttype", "=", names.contact],
+          ])
+        )?.parent || "";
+      if (contactName) break;
+    }
   }
   if (!contactName) return "";
+
+  const primary = await firstRow(env, names.customer, ["name"], [["customer_primary_contact", "=", contactName]]);
+  if (primary?.name) return primary.name;
+
   try {
-    const linked = await erpList(env, names.customer, {
-      fields: ["name"],
-      filters: [["customer_primary_contact", "=", contactName]],
-      limit: 1,
-    });
-    return linked[0]?.name || "";
+    const doc = await erp(env, `/api/resource/${encodeURIComponent(names.contact)}/${encodeURIComponent(contactName)}`);
+    const link = (doc.data?.links || []).find((row) => row.link_doctype === names.customer && row.link_name);
+    if (link?.link_name) return link.link_name;
   } catch {
-    return "";
+    // This contact's customer link is not readable through the resource API.
+  }
+  return "";
+}
+
+async function firstRow(env, doctype, fields, filters) {
+  try {
+    const rows = await erpList(env, doctype, { fields, filters, limit: 1 });
+    return rows[0] || null;
+  } catch {
+    return null;
   }
 }
 
