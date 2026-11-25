@@ -54,14 +54,40 @@ export async function signOut() {
     window.location.assign(appLoginHref());
     return;
   }
+  const csrf = await siteCsrfHeaders();
   const response = await fetch("/api/method/logout", {
-    method: "GET",
+    method: "POST",
     credentials: "same-origin",
-    redirect: "manual",
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...csrf },
   });
-  if (!(response.ok || response.type === "opaqueredirect")) throw new Error("Could not sign out.");
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.exc_type || payload.exception) {
+    throw new Error(failureText(payload, "Could not sign out."));
+  }
   window.location.assign(appLoginHref());
+}
+
+export async function siteCsrfHeaders() {
+  const response = await fetch("/ticket", {
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { Accept: "text/html" },
+  });
+  if (!response.ok) throw new Error("Could not verify your session. Refresh and try again.");
+  const page = await response.text();
+  const pageToken = new DOMParser()
+    .parseFromString(page, "text/html")
+    .querySelector('meta[name="csrf-token"]')
+    ?.getAttribute("content")
+    ?.trim();
+  const token = pageToken && !pageToken.includes("{") && !pageToken.includes("}")
+    ? pageToken
+    : cookieValue("csrf_token");
+  if (!token || token.includes("{") || token.includes("}")) {
+    throw new Error("Could not verify your session. Refresh and try again.");
+  }
+  window.csrf_token = token;
+  return { "X-Frappe-CSRF-Token": token };
 }
 
 async function siteSession() {
@@ -129,7 +155,7 @@ function cookieValue(name) {
   }
 }
 
-function failureText(payload) {
+function failureText(payload, fallback = "Those credentials were not accepted.") {
   if (typeof payload?.error === "string" && payload.error) return payload.error;
   if (payload?.message === "Password Reset") return "Reset the password on this account, then sign in again.";
   if (typeof payload?.message === "string" && payload.message && payload.message !== "Logged In") return stripHtml(payload.message);
@@ -149,7 +175,7 @@ function failureText(payload) {
     const text = stripHtml(payload.exception).replace(/^[\w.]*Error:\s*/, "");
     if (text) return text;
   }
-  return "Those credentials were not accepted.";
+  return fallback;
 }
 
 function stripHtml(value) {

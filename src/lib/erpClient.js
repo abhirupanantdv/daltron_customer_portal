@@ -1,4 +1,4 @@
-import { appLoginHref, csrfHeaders } from "@/lib/auth";
+import { appLoginHref, siteCsrfHeaders } from "@/lib/auth";
 
 const CHAT_KEY = "cove.erp.chat.v1";
 const ON_SITE = import.meta.env.PROD;
@@ -81,7 +81,7 @@ async function readJson(response) {
     window.location.assign(`${appLoginHref()}?redirect-to=${encodeURIComponent(next)}`);
     throw new Error("Sign in to continue.");
   }
-  if (!response.ok) throw new Error(errorMessage(body));
+  if (!response.ok || body.exc_type || body.exception) throw new Error(errorMessage(body));
   return body.message ?? body;
 }
 
@@ -94,12 +94,13 @@ function needsSignIn(status, body) {
 async function siteCall(method, { method: httpMethod = "GET", body, headers } = {}) {
   const verb = String(httpMethod || "GET").toUpperCase();
   const write = verb !== "GET" && verb !== "HEAD";
+  const csrf = write ? await siteCsrfHeaders() : {};
   const response = await fetch(`/api/method/ticket_system.api.${method}`, {
     method: verb,
     credentials: "same-origin",
     headers: {
       Accept: "application/json",
-      ...(write ? csrfHeaders() : {}),
+      ...csrf,
       ...headers,
     },
     ...(body == null || !write ? {} : { body }),
