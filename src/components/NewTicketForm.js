@@ -4,7 +4,6 @@ import { fetchOptions } from "@/lib/erpClient";
 import { useTickets } from "@/components/TicketsProvider";
 import { IconChat, IconPlus, IconTickets, PageFrame, fieldClass, ghostBtn, primaryBtn } from "@/components/ui";
 
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_FILES = 10;
 const PHOTO_LIMIT = 10 * 1024 * 1024;
 const VIDEO_LIMIT = 25 * 1024 * 1024;
@@ -44,8 +43,6 @@ export default function NewTicketForm() {
   const [files, setFiles] = useState([]);
   const filesRef = useRef([]);
   const subjectRef = useRef(null);
-  const customerRef = useRef(null);
-  const emailRef = useRef(null);
 
   useEffect(() => {
     subjectRef.current?.focus({ preventScroll: true });
@@ -66,13 +63,29 @@ export default function NewTicketForm() {
     fetchOptions()
       .then((data) => {
         if (cancelled) return;
-        setOptions(data);
+        const customers = asList(data?.customers);
+        const priorities = asList(data?.priorities);
+        const sources = asList(data?.sources);
+        setOptions({
+          ...data,
+          customers,
+          sites: asList(data?.sites),
+          contacts: asList(data?.contacts),
+          equipment: asList(data?.equipment),
+          ticketTypes: asList(data?.ticketTypes),
+          categories: asList(data?.categories),
+          impacts: asList(data?.impacts),
+          urgencies: asList(data?.urgencies),
+          priorities,
+          sources,
+          statuses: asList(data?.statuses),
+        });
         setForm((current) => ({
           ...current,
-          customer: data.customers.length === 1 ? data.customers[0].name : current.customer,
-          priority: data.priorities.includes("Medium") ? "Medium" : data.priorities[0] || "",
-          source: data.sources.includes("Customer Portal") ? "Customer Portal" : current.source,
+          priority: priorities.includes("Medium") ? "Medium" : priorities[0] || "",
+          source: sources.includes("Customer Portal") ? "Customer Portal" : current.source,
         }));
+        if (data?.warnings) setErrors((current) => ({ ...current, form: data.warnings }));
       })
       .catch((error) => {
         if (!cancelled) setErrors((current) => ({ ...current, form: error.message }));
@@ -83,16 +96,7 @@ export default function NewTicketForm() {
   }, []);
 
   function setField(key, value) {
-    setForm((current) => {
-      const next = { ...current, [key]: value };
-      if (key === "customer") {
-        const siteOk = (options?.sites || []).some((item) => item.name === current.customerSite && item.customer === value);
-        const equipmentOk = (options?.equipment || []).some((item) => item.name === current.customerEquipment && item.customer === value);
-        if (!siteOk) next.customerSite = "";
-        if (!equipmentOk) next.customerEquipment = "";
-      }
-      return next;
-    });
+    setForm((current) => ({ ...current, [key]: value }));
   }
 
   function addFiles(list) {
@@ -137,12 +141,8 @@ export default function NewTicketForm() {
     event.preventDefault();
     const next = {};
     if (!form.subject.trim()) next.subject = "Add a subject.";
-    if (!form.customer) next.customer = "Choose a customer.";
-    if (form.contactEmail.trim() && !EMAIL.test(form.contactEmail.trim())) next.contactEmail = "Add a valid email.";
     setErrors(next);
-    if (next.subject) subjectRef.current?.focus();
-    else if (next.customer) customerRef.current?.focus();
-    else if (next.contactEmail) emailRef.current?.focus();
+    if (next.subject) subjectRef.current?.focus({ preventScroll: true });
     if (Object.keys(next).length) return;
 
     setSubmitting(true);
@@ -154,9 +154,6 @@ export default function NewTicketForm() {
       setSubmitting(false);
     }
   }
-
-  const sites = (options?.sites || []).filter((item) => !form.customer || item.customer === form.customer);
-  const equipment = (options?.equipment || []).filter((item) => !form.customer || item.customer === form.customer);
 
   return (
     <PageFrame>
@@ -177,26 +174,6 @@ export default function NewTicketForm() {
         </ul>
 
         <form noValidate onSubmit={submit} className="mt-6 grid gap-5">
-          <FormSection title="Customer">
-            <div className="grid items-start gap-x-5 gap-y-4 sm:grid-cols-2">
-              <div className="grid gap-4">
-                <SelectField label="Customer" id="customer" inputRef={customerRef} value={form.customer} error={errors.customer} onChange={(value) => setField("customer", value)} options={options?.customers || []} placeholder="Choose a customer" />
-                <SelectField label="Customer Site" id="customer-site" value={form.customerSite} onChange={(value) => setField("customerSite", value)} options={sites} placeholder="No site" />
-              </div>
-              <div className="grid gap-4">
-                <SelectField label="Contact Person" id="contact-person" value={form.contactPerson} onChange={(value) => setField("contactPerson", value)} options={options?.contacts || []} placeholder="No contact" />
-                <TextField label="Contact Email" id="contact-email" inputRef={emailRef} type="email" value={form.contactEmail} error={errors.contactEmail} onChange={(value) => setField("contactEmail", value)} placeholder="name@company.com" />
-                <TextField label="Contact Mobile" id="contact-mobile" type="tel" value={form.contactMobile} onChange={(value) => setField("contactMobile", value)} placeholder="Mobile number" />
-              </div>
-            </div>
-          </FormSection>
-
-          <FormSection title="Equipment">
-            <div className="grid items-start gap-x-5 sm:grid-cols-2">
-              <SelectField label="Customer Equipment" id="equipment" data-tour="field-reference" value={form.customerEquipment} onChange={(value) => setField("customerEquipment", value)} options={equipment} placeholder="No equipment" />
-            </div>
-          </FormSection>
-
           <FormSection title="Ticket">
             <div className="grid items-start gap-x-5 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
               <SelectField label="Ticket Type" id="ticket-type" value={form.ticketType} onChange={(value) => setField("ticketType", value)} choices={options?.ticketTypes || []} placeholder="No ticket type" />
@@ -212,7 +189,7 @@ export default function NewTicketForm() {
             </div>
             <div className="grid items-start gap-x-5 gap-y-4 lg:grid-cols-2">
               <TextArea label="Description" id="description" data-tour="field-description" value={form.description} onChange={(value) => setField("description", value)} placeholder="What happened" rows={3} />
-              <TextArea label="Customer Complaint" id="customer-complaint" value={form.customerComplaint} onChange={(value) => setField("customerComplaint", value)} placeholder="What the customer reported" rows={3} />
+              <TextArea label="Complaint" id="customer-complaint" value={form.customerComplaint} onChange={(value) => setField("customerComplaint", value)} placeholder="What was reported" rows={3} />
             </div>
           </FormSection>
 
@@ -234,6 +211,10 @@ export default function NewTicketForm() {
       </div>
     </PageFrame>
   );
+}
+
+function asList(value) {
+  return Array.isArray(value) ? value : [];
 }
 
 function fileKind(file) {

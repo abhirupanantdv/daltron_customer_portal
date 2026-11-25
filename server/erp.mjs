@@ -207,8 +207,7 @@ async function loginWithCredentials(url, { usr, pwd, otp, tmpId }) {
   const jar = new Map();
   rememberCookies(jar, setCookiesFrom(response));
   if (!jar.get("sid")?.value) throw httpError(401, "Login did not return a session.");
-  const session = { jar, csrf: jar.get("csrf_token")?.value || "" };
-  if (!session.csrf) session.csrf = await fetchCsrf({ url }, session);
+  const session = { jar };
   const user = cookieText(jar.get("user_id")?.value) || usr;
   const fullName = cookieText(jar.get("full_name")?.value) || payload.full_name || user;
   return { status: "ok", session, user, fullName };
@@ -257,7 +256,9 @@ function browserSessionFor(req, url) {
 function scopeEnv(env, req) {
   const entry = browserSessionFor(req, env.url);
   if (entry) {
-    return { ...env, token: "", _session: entry.session, _browser: true, _browserId: entry.id };
+    const portal = { ...env, _browser: true, _browserId: entry.id, _portalUser: entry.user };
+    if (env.token) return portal;
+    return { ...portal, token: "", _session: entry.session };
   }
   if (!envReady(env)) return null;
   return env;
@@ -308,28 +309,14 @@ async function handleLogout(env, req, res) {
   send(res, 200, { ok: true });
 }
 
-async function fetchCsrf(env, session) {
-  const response = await fetch(`${env.url}/api/method/frappe.sessions.get_csrf_token`, {
-    headers: { Accept: "application/json", Cookie: cookieHeader(session.jar) },
-  });
-  const payload = await response.json().catch(() => ({}));
-  rememberCookies(session.jar, setCookiesFrom(response));
-  const token = (typeof payload.message === "string" && payload.message) || session.jar.get("csrf_token")?.value || "";
-  if (!response.ok || !token) throw httpError(401, "Login did not return a CSRF token.");
-  return token;
-}
-
 async function logoutSession(url, session) {
   const cookie = cookieHeader(session.jar);
   if (!cookie) return;
   try {
     await fetch(`${url}/api/method/logout`, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        Cookie: cookie,
-        ...(session.csrf ? { "X-Frappe-CSRF-Token": session.csrf } : {}),
-      },
+      method: "GET",
+      headers: { Accept: "application/json", Cookie: cookie },
+      redirect: "manual",
     });
   } catch {
     // A closed old server should not block the next login.
@@ -382,8 +369,6 @@ function absorbCookies(env, response) {
   const session = env._session || (usesSession(env) ? sessions.get(serverKey(env))?.session : null);
   if (!session) return;
   rememberCookies(session.jar, setCookiesFrom(response));
-  const csrf = session.jar.get("csrf_token")?.value;
-  if (csrf) session.csrf = csrf;
 }
 
 async function authHeaders(env, { method = "GET", headers = {} } = {}) {
@@ -392,19 +377,11 @@ async function authHeaders(env, { method = "GET", headers = {} } = {}) {
   if (!session) {
     return { Accept: "application/json", Authorization: `token ${env.token}`, ...headers };
   }
-  const csrf = method === "GET" || method === "HEAD" ? "" : session.csrf;
   return {
     Accept: "application/json",
     Cookie: cookieHeader(session.jar),
-    ...(csrf ? { "X-Frappe-CSRF-Token": csrf } : {}),
     ...headers,
   };
-}
-
-async function looksLikeCsrf(response) {
-  if (response.status !== 403) return false;
-  const body = await response.clone().json().catch(() => ({}));
-  return erpMessage(body).toLowerCase().includes("csrf");
 }
 
 async function erpFetch(env, requestPath, options = {}) {
@@ -425,7 +402,7 @@ async function erpFetch(env, requestPath, options = {}) {
     if (response.status === 401 && env._browserId) browserSessions.delete(env._browserId);
     return response;
   }
-  if (!usesSession(env) || !(response.status === 401 || (await looksLikeCsrf(response)))) return response;
+  if (!usesSession(env) || response.status !== 401) return response;
   dropSession(env);
   return run();
 }
@@ -499,24 +476,61 @@ async function route(env, req, res, requestUrl) {
   send(res, 404, { error: "Not found" });
 }
 
-async function loadOptions(env) {
+async function portalCustomer(env) {
+  const email = String(env._portalUser || "").trim();
+  if (!email) return "";
   const names = doctypes();
-  const [customers, sites, contacts, equipment, fields] = await Promise.all([
-    erpList(env, names.customer, { fields: ["name", "customer_name"], orderBy: "customer_name asc" }),
-    erpList(env, names.site, { fields: ["name", "customer"], orderBy: "name asc" }),
-    erpList(env, names.contact, { fields: ["name", "full_name"], orderBy: "name asc", limit: 200 }),
-    erpList(env, names.equipment, { fields: ["name", "customer", "item_name", "serial_no", "equipment_id"] }),
-    selectFields(env, names.ticket),
-  ]);
+  try {
+    const byEmail = await erpList(env, names.customer, {
+      fields: ["name"],
+      filters: [["email_id", "=", email]],
+      limit: 1,
+    });
+    if (byEmail[0]?.name) return byEmail[0].name;
+  } catch {
+    // This customer list has no email field.
+  }
+  let contactName = "";
+  try {
+    const byUser = await erpList(env, names.contact, {
+      fields: ["name"],
+      filters: [["user", "=", email]],
+      limit: 1,
+    });
+    contactName = byUser[0]?.name || "";
+    if (!contactName) {
+      const byContactEmail = await erpList(env, names.contact, {
+        fields: ["name"],
+        filters: [["email_id", "=", email]],
+        limit: 1,
+      });
+      contactName = byContactEmail[0]?.name || "";
+    }
+  } catch {
+    contactName = "";
+  }
+  if (!contactName) return "";
+  try {
+    const linked = await erpList(env, names.customer, {
+      fields: ["name"],
+      filters: [["customer_primary_contact", "=", contactName]],
+      limit: 1,
+    });
+    return linked[0]?.name || "";
+  } catch {
+    return "";
+  }
+}
+
+async function loadOptions(env) {
+  const warnings = [];
+  const fields = await selectFields(env, doctypes().ticket);
+  warnings.push(...(fields.warnings || []));
   return {
-    customers: customers.map((row) => ({ name: row.name, label: row.customer_name || row.name })),
-    sites: sites.map((row) => ({ name: row.name, customer: row.customer || "", label: row.name })),
-    contacts: contacts.map((row) => ({ name: row.name, label: row.full_name || row.name })),
-    equipment: equipment.map((row) => ({
-      name: row.name,
-      customer: row.customer || "",
-      label: [row.name, row.item_name].filter(Boolean).join(" · "),
-    })),
+    customers: [],
+    sites: [],
+    contacts: [],
+    equipment: [],
     ticketTypes: fields.ticketTypes,
     categories: fields.categories,
     impacts: fields.impacts,
@@ -524,19 +538,29 @@ async function loadOptions(env) {
     priorities: fields.priorities,
     sources: fields.sources,
     statuses: fields.statuses,
+    warnings: warnings.join(" "),
   };
 }
 
 async function loadTickets(env) {
-  const rows = await erpList(env, doctypes().ticket, { fields: TICKET_FIELDS, orderBy: "modified desc" });
+  const customer = await portalCustomer(env);
+  if (!customer) return [];
+  const rows = await erpList(env, doctypes().ticket, {
+    fields: TICKET_FIELDS,
+    filters: [["customer", "=", customer]],
+    orderBy: "modified desc",
+  });
   const files = await loadTicketFiles(env);
   return rows.map((row) => mapTicket(row, files.get(row.name)));
 }
 
 async function loadTicket(env, name) {
   if (!/^ST-\d{4}-\d+$/.test(name)) return null;
+  const customer = await portalCustomer(env);
+  if (!customer) return null;
   const ticket = doctypes().ticket;
   const body = await erp(env, `/api/resource/${encodeURIComponent(ticket)}/${encodeURIComponent(name)}`);
+  if (body.data?.customer !== customer) return null;
   return mapTicket(body.data, await loadTicketFiles(env, name));
 }
 
@@ -560,9 +584,9 @@ async function loadTicketFiles(env, name) {
 async function createTicket(env, input) {
   const options = await selectFields(env);
   const subject = String(input.subject || "").trim();
-  const customer = String(input.customer || "").trim();
+  const customer = await portalCustomer(env);
   if (!subject) throw httpError(400, "Add a subject.");
-  if (!customer) throw httpError(400, "Choose a customer.");
+  if (!customer) throw httpError(403, "This account is not linked to a customer.");
 
   const payload = {
     naming_series: "ST-.YYYY.-.#####",
@@ -640,21 +664,24 @@ async function sendFile(env, res, name) {
 }
 
 async function selectFields(env, ticket = doctypes().ticket) {
+  const warnings = [];
   try {
     const body = await erp(env, `/api/method/frappe.desk.form.load.getdoctype?doctype=${encodeURIComponent(ticket)}`);
     const docs = body.docs || body.message?.docs || [];
     const doc = docs.find((item) => item.name === ticket) || docs[0];
     const fields = doc?.fields || [];
-    return {
-      ticketTypes: selectOptions(fields, "ticket_type"),
-      categories: selectOptions(fields, "service_category").length ? selectOptions(fields, "service_category") : CATEGORY_FALLBACK,
-      impacts: selectOptions(fields, "impact"),
-      urgencies: selectOptions(fields, "urgency"),
-      priorities: selectOptions(fields, "priority").length ? selectOptions(fields, "priority") : PRIORITY_FALLBACK,
-      sources: selectOptions(fields, "source"),
-      statuses: selectOptions(fields, "status"),
-    };
+    const [ticketTypes, categories, impacts, urgencies, priorities, sources, statuses] = await Promise.all([
+      choiceValues(env, fields, "ticket_type", warnings, "ticket types"),
+      choiceValues(env, fields, "service_category", warnings, "categories", CATEGORY_FALLBACK),
+      choiceValues(env, fields, "impact", warnings, "impacts"),
+      choiceValues(env, fields, "urgency", warnings, "urgencies"),
+      choiceValues(env, fields, "priority", warnings, "priorities", PRIORITY_FALLBACK),
+      choiceValues(env, fields, "source", warnings, "sources"),
+      choiceValues(env, fields, "status", warnings, "statuses"),
+    ]);
+    return { ticketTypes, categories, impacts, urgencies, priorities, sources, statuses, warnings };
   } catch {
+    warnings.push("Could not load ticket fields.");
     return {
       ticketTypes: [],
       categories: CATEGORY_FALLBACK,
@@ -663,17 +690,30 @@ async function selectFields(env, ticket = doctypes().ticket) {
       priorities: PRIORITY_FALLBACK,
       sources: [],
       statuses: [],
+      warnings,
     };
   }
 }
 
-function selectOptions(fields, fieldname) {
+async function choiceValues(env, fields, fieldname, warnings, label, fallback = null) {
   const field = fields.find((item) => item.fieldname === fieldname);
-  if (!field?.options) return [];
-  return field.options
+  if (!field) return fallback ? [...fallback] : [];
+  if (field.fieldtype === "Link" && field.options) {
+    try {
+      const rows = await erpList(env, field.options, { fields: ["name"], orderBy: "name asc", limit: 200 });
+      return rows.map((row) => row.name).filter(Boolean);
+    } catch {
+      warnings.push(`Could not load ${label}.`);
+      return [];
+    }
+  }
+  if (field.fieldtype !== "Select") return fallback ? [...fallback] : [];
+  const values = String(field.options || "")
     .split("\n")
     .map((item) => item.trim())
     .filter(Boolean);
+  if (!values.length && fallback) return [...fallback];
+  return values;
 }
 
 async function erpList(env, doctype, { fields, filters, limit = 100, orderBy } = {}) {

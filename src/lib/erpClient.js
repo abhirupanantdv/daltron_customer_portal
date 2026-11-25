@@ -32,13 +32,6 @@ export function withLocalChat(tickets) {
   });
 }
 
-function csrfToken() {
-  const fromPage = window.frappe?.csrf_token;
-  if (fromPage) return fromPage;
-  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : "";
-}
-
 function errorMessage(body) {
   if (body?.error) return body.error;
   if (body?._server_messages) {
@@ -98,7 +91,6 @@ async function siteCall(method, { method: httpMethod = "GET", body, headers } = 
     credentials: "same-origin",
     headers: {
       Accept: "application/json",
-      "X-Frappe-CSRF-Token": csrfToken(),
       ...headers,
     },
     body,

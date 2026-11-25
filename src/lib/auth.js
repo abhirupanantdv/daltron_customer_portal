@@ -55,14 +55,12 @@ export async function signOut() {
     return;
   }
   const response = await fetch("/api/method/logout", {
-    method: "POST",
+    method: "GET",
     credentials: "same-origin",
-    headers: {
-      Accept: "application/json",
-      "X-Frappe-CSRF-Token": await csrfToken(),
-    },
+    redirect: "manual",
+    headers: { Accept: "application/json" },
   });
-  if (!response.ok) throw new Error("Could not sign out.");
+  if (!(response.ok || response.type === "opaqueredirect")) throw new Error("Could not sign out.");
   window.location.assign(appLoginHref());
 }
 
@@ -88,7 +86,6 @@ async function siteSignIn({ usr, pwd, otp, tmpId }) {
     headers: {
       Accept: "application/json",
       "Content-Type": "application/x-www-form-urlencoded",
-      "X-Frappe-CSRF-Token": await csrfToken(),
     },
     body,
   });
@@ -106,19 +103,6 @@ async function siteSignIn({ usr, pwd, otp, tmpId }) {
     user: cookieValue("user_id") || usr,
     fullName: payload.full_name || cookieValue("full_name") || usr,
   };
-}
-
-async function csrfToken() {
-  const fromPage = window.frappe?.csrf_token;
-  if (fromPage && fromPage !== "{{ csrf_token }}") return fromPage;
-  const fromCookie = cookieValue("csrf_token");
-  if (fromCookie) return fromCookie;
-  const response = await fetch("/api/method/frappe.sessions.get_csrf_token", {
-    credentials: "same-origin",
-    headers: { Accept: "application/json" },
-  });
-  const body = await response.json().catch(() => ({}));
-  return typeof body.message === "string" ? body.message : "";
 }
 
 function cookieValue(name) {

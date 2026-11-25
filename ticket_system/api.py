@@ -68,32 +68,75 @@ def check_app_permission():
     return bool(frappe.has_permission(ticket, "read"))
 
 
+def _portal_customer():
+    user = frappe.session.user
+    if not user or user == "Guest":
+        return ""
+    names = _doctypes()
+    customer_doctype = names["customer"]
+    if frappe.db.exists("DocType", customer_doctype):
+        customer_meta = frappe.get_meta(customer_doctype)
+        if customer_meta.has_field("email_id"):
+            found = frappe.db.get_value(customer_doctype, {"email_id": user}, "name")
+            if found:
+                return found
+    contact_doctype = names["contact"]
+    contact = ""
+    if frappe.db.exists("DocType", contact_doctype):
+        contact_meta = frappe.get_meta(contact_doctype)
+        if contact_meta.has_field("user"):
+            contact = frappe.db.get_value(contact_doctype, {"user": user}, "name") or ""
+        if not contact and contact_meta.has_field("email_id"):
+            contact = frappe.db.get_value(contact_doctype, {"email_id": user}, "name") or ""
+    if contact and frappe.db.exists("DocType", customer_doctype) and frappe.get_meta(customer_doctype).has_field("customer_primary_contact"):
+        found = frappe.db.get_value(customer_doctype, {"customer_primary_contact": contact}, "name")
+        if found:
+            return found
+    return ""
+
+
 @frappe.whitelist()
 def get_options():
     meta = _ticket_meta()
-    names = _doctypes()
-    categories = _select_options(meta, "service_category") or CATEGORY_FALLBACK
-    priorities = _select_options(meta, "priority") or PRIORITY_FALLBACK
+    warnings = []
+
+    def load(label, loader):
+        try:
+            return loader()
+        except Exception:
+            warnings.append(_("Could not load {0}.").format(label))
+            return []
+
     return {
-        "customers": _link_rows(names["customer"], ["name", "customer_name"], "customer_name asc", lambda row: row.customer_name or row.name),
-        "sites": _link_rows(names["site"], ["name", "customer"], "name asc", lambda row: row.name, extra=lambda row: {"customer": row.customer or ""}),
-        "contacts": _link_rows(names["contact"], ["name", "full_name"], "name asc", lambda row: row.full_name or row.name, limit=200),
-        "equipment": _equipment_rows(),
-        "ticketTypes": _select_options(meta, "ticket_type"),
-        "categories": categories,
-        "impacts": _select_options(meta, "impact"),
-        "urgencies": _select_options(meta, "urgency"),
-        "priorities": priorities,
-        "sources": _select_options(meta, "source"),
-        "statuses": _select_options(meta, "status"),
+        "customers": [],
+        "sites": [],
+        "contacts": [],
+        "equipment": [],
+        "ticketTypes": load("ticket types", lambda: _choice_options(meta, "ticket_type")),
+        "categories": load("categories", lambda: _choice_or_fallback(meta, "service_category", CATEGORY_FALLBACK)),
+        "impacts": load("impacts", lambda: _choice_options(meta, "impact")),
+        "urgencies": load("urgencies", lambda: _choice_options(meta, "urgency")),
+        "priorities": load("priorities", lambda: _choice_or_fallback(meta, "priority", PRIORITY_FALLBACK)),
+        "sources": load("sources", lambda: _choice_options(meta, "source")),
+        "statuses": load("statuses", lambda: _choice_options(meta, "status")),
+        "warnings": " ".join(str(item) for item in warnings),
     }
 
 
 @frappe.whitelist()
 def get_tickets():
     meta = _ticket_meta()
+    customer = _portal_customer()
+    if not customer:
+        return {"tickets": []}
     fields = _present_fields(meta, TICKET_FIELDS)
-    rows = frappe.get_list(_doctypes()["ticket"], fields=fields, order_by="modified desc", limit_page_length=100)
+    rows = frappe.get_list(
+        _doctypes()["ticket"],
+        fields=fields,
+        filters={"customer": customer},
+        order_by="modified desc",
+        limit_page_length=100,
+    )
     files = _files_for([row.name for row in rows])
     return {"tickets": [_map_ticket(row, files.get(row.name, [])) for row in rows]}
 
@@ -103,11 +146,11 @@ def create_ticket():
     meta = _ticket_meta()
     data = _request_data()
     subject = str(data.get("subject") or "").strip()
-    customer = str(data.get("customer") or "").strip()
+    customer = _portal_customer()
     if not subject:
         frappe.throw(_("Add a subject."))
     if not customer:
-        frappe.throw(_("Choose a customer."))
+        frappe.throw(_("This account is not linked to a customer."), frappe.PermissionError)
 
     payload = {"doctype": _doctypes()["ticket"], "customer": customer, "subject": subject}
     series = "ST-.YYYY.-.#####"
@@ -199,11 +242,26 @@ def _present_fields(meta, wanted):
     return [field for field in wanted if field in available] or ["name"]
 
 
-def _select_options(meta, fieldname):
+def _choice_options(meta, fieldname):
     field = meta.get_field(fieldname)
     if not field:
         return []
-    return _lines(field.options)
+    if field.fieldtype == "Link" and field.options:
+        rows = _link_rows(field.options, ["name"], "name asc", lambda row: row.name, limit=200)
+        return [row["name"] for row in rows]
+    if field.fieldtype == "Select":
+        return _lines(field.options)
+    return []
+
+
+def _choice_or_fallback(meta, fieldname, fallback):
+    field = meta.get_field(fieldname)
+    if not field:
+        return list(fallback)
+    choices = _choice_options(meta, fieldname)
+    if field.fieldtype == "Link":
+        return choices
+    return choices or list(fallback)
 
 
 def _order(meta, order_by):
@@ -229,7 +287,7 @@ def _assign_choice(payload, meta, fieldname, value, label):
     text = str(value or "").strip()
     if not text or not meta.has_field(fieldname):
         return
-    allowed = _select_options(meta, fieldname)
+    allowed = _choice_options(meta, fieldname)
     if allowed and text not in allowed:
         frappe.throw(_("Choose a {0} from the list.").format(label))
     payload[fieldname] = text

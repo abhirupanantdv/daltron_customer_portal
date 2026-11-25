@@ -105,7 +105,6 @@ const ticketSteps = [
 ];
 
 const newTicketSteps = [
-  step("[data-tour='field-reference']", "Customer equipment", "Optional. The equipment record this ticket is about.", { side: "bottom", align: "start" }),
   step("[data-tour='field-category']", "Service category", "Network, hardware, printer, and the other categories from the desk.", { side: "bottom", align: "start" }),
   step("[data-tour='field-priority']", "Priority", "Critical, high, medium, or low.", { side: "bottom", align: "start" }),
   step("[data-tour='field-subject']", "Subject", "A short line. This is the title on the service ticket.", { side: "bottom", align: "start" }),

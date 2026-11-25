@@ -1,13 +1,24 @@
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useTickets } from "@/components/TicketsProvider";
 import { IconBack, IconChat, MissingTicket, PageFrame, PageSkeleton, formatDay, primaryBtn } from "@/components/ui";
 
 export default function TicketDetail() {
   const { id } = useParams();
-  const { tickets, hydrated, copyId } = useTickets();
+  const { tickets, hydrated, copyId, reloadTickets } = useTickets();
   const ticket = tickets.find((item) => item.id === id) ?? null;
+  const [lookup, setLookup] = useState("");
 
-  if (!ticket && !hydrated) return <PageSkeleton />;
+  useEffect(() => {
+    if (!hydrated || ticket || lookup === id || lookup === `pending:${id}`) return undefined;
+    setLookup(`pending:${id}`);
+    reloadTickets()
+      .catch(() => {})
+      .finally(() => setLookup(id));
+    return undefined;
+  }, [hydrated, id, lookup, reloadTickets, ticket]);
+
+  if (!ticket && lookup !== id) return <PageSkeleton />;
   if (!ticket) return <MissingTicket />;
 
   const messages = ticket.messages.filter((message) => message.from !== "system").length;

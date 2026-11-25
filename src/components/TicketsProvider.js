@@ -36,8 +36,12 @@ export default function TicketsProvider({ children }) {
     };
   }, []);
 
+  const loadGeneration = useRef(0);
+
   const reloadTickets = useCallback(async () => {
+    const generation = ++loadGeneration.current;
     const [list, options] = await Promise.all([fetchTickets(), fetchOptions().catch(() => null)]);
+    if (generation !== loadGeneration.current) return list;
     if (Array.isArray(options?.statuses)) setStatuses(options.statuses.filter(Boolean));
     setTickets([...list].sort(byUpdated));
     return list;
@@ -123,6 +127,7 @@ export default function TicketsProvider({ children }) {
   const createTicket = useCallback(async (input) => {
     const { files = [], ...fields } = input;
     const body = await postTicket(fields);
+    loadGeneration.current += 1;
     const attachments = [];
     const failed = [];
     for (const file of files) {
@@ -169,9 +174,10 @@ export default function TicketsProvider({ children }) {
       createTicket,
       sendMessage,
       refreshTickets,
+      reloadTickets,
       copyId,
     }),
-    [tickets, statuses, hydrated, now, typingId, createTicket, sendMessage, refreshTickets, copyId],
+    [tickets, statuses, hydrated, now, typingId, createTicket, sendMessage, refreshTickets, reloadTickets, copyId],
   );
 
   return (
