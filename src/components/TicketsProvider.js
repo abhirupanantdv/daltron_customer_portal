@@ -134,14 +134,14 @@ export default function TicketsProvider({ children }) {
       try {
         const uploaded = await uploadTicketFile(body.ticket.id, file);
         if (uploaded.file) attachments.push(uploaded.file);
-      } catch {
-        failed.push(file.name || "file");
+      } catch (error) {
+        failed.push(error?.message ? `${file.name || "file"} (${error.message})` : file.name || "file");
       }
     }
-    const ticket = { ...withLocalChat([body.ticket])[0], attachments };
-    setTickets((prev) => [ticket, ...prev.filter((item) => item.id !== ticket.id)].sort(byUpdated));
     const fileWarning = failed.length === 1 ? `Could not attach ${failed[0]}.` : failed.length ? `Could not attach ${failed.length} files.` : "";
     const warning = [body.warning, fileWarning].filter(Boolean).join(" ");
+    const ticket = { ...withLocalChat([body.ticket])[0], attachments, uploadWarning: warning };
+    setTickets((prev) => [ticket, ...prev.filter((item) => item.id !== ticket.id)].sort(byUpdated));
     setToast(warning ? `Ticket ${ticket.id} created. ${warning}` : `Ticket ${ticket.id} created`);
     return ticket;
   }, []);

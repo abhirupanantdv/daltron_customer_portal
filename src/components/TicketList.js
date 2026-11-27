@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import { formatWhen, matchesFilter } from "@/lib/tickets";
 import { useTickets } from "@/components/TicketsProvider";
 import { IconPlus, IconSearch, IconTickets, PageFrame, fieldClass, primaryBtn } from "@/components/ui";
+import { MediaThumb } from "@/components/MediaPreview";
 
 function statusFilters(statuses, tickets) {
   const fromDesk = statuses.filter(Boolean);
@@ -213,7 +214,7 @@ function TicketRow({ ticket, now }) {
   return (
     <li className="border-b border-ink/10 last:border-b-0">
       <Link to={`/tickets/${ticket.id}`} className="flex items-start gap-4 py-5 transition hover:text-ink">
-        <IconTickets className="mt-0.5 size-4 shrink-0 text-mute" />
+        {ticket.attachments?.[0] ? <MediaThumb item={ticket.attachments[0]} /> : <IconTickets className="mt-0.5 size-4 shrink-0 text-mute" />}
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline justify-between gap-4">
             <span className="font-mono text-xs text-mute">{ticket.id}</span>

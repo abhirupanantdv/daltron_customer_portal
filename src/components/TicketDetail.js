@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { useTickets } from "@/components/TicketsProvider";
+import { MediaGrid } from "@/components/MediaPreview";
 import { IconBack, IconChat, MissingTicket, PageFrame, PageSkeleton, formatDay, primaryBtn } from "@/components/ui";
 
 export default function TicketDetail() {
   const { id } = useParams();
+  const location = useLocation();
+  const uploadWarning = location.state?.uploadWarning || "";
   const { tickets, hydrated, copyId, reloadTickets } = useTickets();
   const ticket = tickets.find((item) => item.id === id) ?? null;
   const [lookup, setLookup] = useState("");
@@ -63,6 +66,17 @@ export default function TicketDetail() {
             </p>
           </header>
 
+          {uploadWarning ? <p className="border-b border-ink/10 px-6 py-4 text-sm text-ink sm:px-8">{uploadWarning}</p> : null}
+
+          {ticket.attachments?.length ? (
+            <section data-tour="ticket-attachments" className="border-b border-ink/10 px-6 py-6 sm:px-8" aria-label="Photos and videos">
+              <h2 className="text-sm font-semibold">Photos and videos</h2>
+              <div className="mt-4">
+                <MediaGrid items={ticket.attachments} />
+              </div>
+            </section>
+          ) : null}
+
           <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_19rem]">
             <div className="min-w-0">
               <section data-tour="ticket-request" aria-label="Request" className="px-6 py-6 sm:px-8 sm:py-7">
@@ -71,7 +85,6 @@ export default function TicketDetail() {
                   {description || "No description was stored with this ticket."}
                 </p>
               </section>
-              <Attachments files={ticket.attachments} />
             </div>
 
             <aside className="space-y-8 border-t border-ink/10 bg-mist/70 px-6 py-6 sm:px-8 lg:border-l lg:border-t-0">
@@ -110,29 +123,6 @@ export default function TicketDetail() {
         </article>
       </div>
     </PageFrame>
-  );
-}
-
-function Attachments({ files }) {
-  if (!files?.length) return null;
-  return (
-    <section data-tour="ticket-attachments" className="border-t border-ink/10 px-6 py-6 sm:px-8 sm:py-7" aria-label="Attachments">
-      <h2 className="text-sm font-semibold">Attachments</h2>
-      <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-        {files.map((file) => (
-          <li key={file.id} className="overflow-hidden rounded-2xl border border-ink/10 bg-mist">
-            {file.kind === "video" ? (
-              <video src={file.url} controls preload="metadata" className="aspect-video w-full bg-ink" />
-            ) : (
-              <a href={file.url} target="_blank" rel="noreferrer">
-                <img src={file.url} alt={file.name} className="aspect-video w-full object-cover" />
-              </a>
-            )}
-            <p className="truncate px-3 py-2 text-xs text-mute">{file.name}</p>
-          </li>
-        ))}
-      </ul>
-    </section>
   );
 }
 

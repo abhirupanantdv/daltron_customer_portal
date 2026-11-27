@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { fetchOptions } from "@/lib/erpClient";
+import { MediaGrid } from "@/components/MediaPreview";
 import { useTickets } from "@/components/TicketsProvider";
 import { IconChat, IconPlus, IconTickets, PageFrame, fieldClass, ghostBtn, primaryBtn } from "@/components/ui";
 
@@ -102,10 +103,14 @@ export default function NewTicketForm() {
   function addFiles(list) {
     const problems = [];
     const next = [...filesRef.current];
-    for (const file of list) {
+    for (const file of Array.from(list || [])) {
       if (next.length >= MAX_FILES) {
         problems.push(`You can add up to ${MAX_FILES} files.`);
         break;
+      }
+      if (!file.size) {
+        problems.push(`${file.name || "That file"} did not come through. Choose it again.`);
+        continue;
       }
       const kind = fileKind(file);
       if (!kind) {
@@ -119,11 +124,37 @@ export default function NewTicketForm() {
       }
       const duplicate = next.some((item) => item.file.name === file.name && item.file.size === file.size && item.file.lastModified === file.lastModified);
       if (duplicate) continue;
-      next.push({ id: crypto.randomUUID(), file, kind, url: URL.createObjectURL(file) });
+      next.push({ id: fileId(), file, kind, url: previewUrl(file) });
     }
     filesRef.current = next;
     setFiles(next);
     setErrors((current) => ({ ...current, attachments: problems[0] || "" }));
+  }
+
+  async function replaceFile(id, raw) {
+    const [file] = await snapshotFiles([raw]);
+    if (!file?.size) {
+      setErrors((current) => ({ ...current, attachments: "That file did not come through. Choose it again." }));
+      return;
+    }
+    const kind = fileKind(file);
+    if (!kind) {
+      setErrors((current) => ({ ...current, attachments: `${file.name} is not a photo or video.` }));
+      return;
+    }
+    const limit = kind === "video" ? VIDEO_LIMIT : PHOTO_LIMIT;
+    if (file.size > limit) {
+      setErrors((current) => ({ ...current, attachments: `${file.name} is too large.` }));
+      return;
+    }
+    const next = filesRef.current.map((entry) => {
+      if (entry.id !== id) return entry;
+      if (entry.url) URL.revokeObjectURL(entry.url);
+      return { id: entry.id, file, kind, url: previewUrl(file) };
+    });
+    filesRef.current = next;
+    setFiles(next);
+    setErrors((current) => ({ ...current, attachments: "" }));
   }
 
   function removeFile(id) {
@@ -147,8 +178,8 @@ export default function NewTicketForm() {
 
     setSubmitting(true);
     try {
-      const ticket = await createTicket({ ...form, files: files.map((item) => item.file) });
-      navigate(`/tickets/${ticket.id}`);
+      const ticket = await createTicket({ ...form, files: filesRef.current.map((item) => item.file) });
+      navigate(`/tickets/${ticket.id}`, { state: { uploadWarning: ticket.uploadWarning || "" } });
     } catch (error) {
       setErrors((current) => ({ ...current, form: error.message }));
       setSubmitting(false);
@@ -188,7 +219,7 @@ export default function NewTicketForm() {
           </FormSection>
 
           <FormSection title="Attachments">
-            <AttachmentField files={files} error={errors.attachments} disabled={submitting} onAdd={addFiles} onRemove={removeFile} />
+            <AttachmentField files={files} error={errors.attachments} disabled={submitting} onAdd={addFiles} onReplace={replaceFile} onRemove={removeFile} />
           </FormSection>
 
           <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
@@ -226,43 +257,75 @@ function asOptions(value) {
 
 function fileKind(file) {
   const name = file.name.toLowerCase();
-  if (file.type === "image/svg+xml" || name.endsWith(".svg")) return "";
-  if (file.type.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|heic|heif)$/.test(name)) return "image";
-  if (file.type.startsWith("video/") || /\.(mp4|webm|mov|m4v|ogg)$/.test(name)) return "video";
+  const type = (file.type || "").toLowerCase();
+  if (type === "image/svg+xml" || name.endsWith(".svg")) return "";
+  if (type.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|heic|heif)$/.test(name)) return "image";
+  if (type.startsWith("video/") || /\.(mp4|webm|mov|m4v|ogg|3gp|mkv|avi)$/.test(name)) return "video";
   return "";
 }
 
-function AttachmentField({ files, error, disabled, onAdd, onRemove }) {
-  const inputRef = useRef(null);
-  const [over, setOver] = useState(false);
+async function snapshotFiles(list) {
+  const picked = [];
+  for (const file of Array.from(list || [])) {
+    const name = file?.name || "attachment";
+    const type = file?.type || "";
+    const lastModified = file?.lastModified || Date.now();
+    const buffer = await file.arrayBuffer();
+    if (!buffer.byteLength) continue;
+    picked.push(new File([buffer], name, { type, lastModified }));
+  }
+  return picked;
+}
 
-  function take(list) {
-    if (disabled) return;
-    onAdd(list);
+function previewUrl(file) {
+  try {
+    return URL.createObjectURL(file);
+  } catch {
+    return "";
+  }
+}
+
+function AttachmentField({ files, error, disabled, onAdd, onReplace, onRemove }) {
+  const [over, setOver] = useState(false);
+  const [reading, setReading] = useState("");
+  const [localError, setLocalError] = useState("");
+  const listRef = useRef(null);
+  const previousCount = useRef(0);
+  const full = files.length >= MAX_FILES;
+
+  useEffect(() => {
+    if (files.length > previousCount.current) {
+      listRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    previousCount.current = files.length;
+  }, [files.length]);
+
+  async function take(list) {
+    if (disabled || full) return;
+    const originals = Array.from(list || []);
+    if (!originals.length) return;
+    setReading(originals.map((file) => file.name || "file").join(", "));
+    setLocalError("");
+    try {
+      const picked = await snapshotFiles(originals);
+      if (!picked.length) {
+        setLocalError("That file did not come through. Choose it again.");
+        return;
+      }
+      onAdd(picked);
+    } catch {
+      setLocalError("That file did not come through. Choose it again.");
+    } finally {
+      setReading("");
+    }
   }
 
   return (
     <div data-tour="field-attachments">
-      <input
-        ref={inputRef}
-        id="attachments"
-        type="file"
-        accept="image/*,video/*"
-        multiple
-        className="sr-only"
-        disabled={disabled}
-        onChange={(event) => {
-          take(event.target.files);
-          event.target.value = "";
-        }}
-      />
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => inputRef.current?.click()}
+      <div
         onDragOver={(event) => {
           event.preventDefault();
-          if (!disabled) setOver(true);
+          if (!disabled && !full) setOver(true);
         }}
         onDragLeave={() => setOver(false)}
         onDrop={(event) => {
@@ -270,38 +333,91 @@ function AttachmentField({ files, error, disabled, onAdd, onRemove }) {
           setOver(false);
           take(event.dataTransfer.files);
         }}
-        className={`flex w-full flex-col items-center gap-1 rounded-xl border border-dashed px-4 py-6 text-center transition ${over ? "border-ink bg-ink/[0.04]" : "border-ink/20 bg-surface hover:bg-ink/[0.03]"} disabled:cursor-not-allowed disabled:opacity-40`}
+        className={`flex w-full flex-col items-center gap-3 rounded-xl border border-dashed px-4 py-6 text-center transition ${over ? "border-ink bg-ink/[0.04]" : "border-ink/20 bg-surface"}`}
       >
-        <span className="text-sm font-medium">Add photos or videos</span>
-        <span className="text-xs leading-5 text-mute">Up to {MAX_FILES} files. Photos under 10 MB, videos under 25 MB. Drop them here or choose from your device. They are saved on the service ticket.</span>
-      </button>
-      {error ? <p className="mt-1.5 text-xs text-ink">{error}</p> : null}
+        <span className="text-sm font-medium">{files.length ? "Add another photo or video" : "Add photos or videos"}</span>
+        <span className="text-xs leading-5 text-mute">
+          Add more than one. Photos under 10 MB, videos under 25 MB. Drop them here, or choose from your device.
+        </span>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <FilePicker accept="image/*" disabled={disabled || full} onPick={take}>
+            Add photos
+          </FilePicker>
+          <FilePicker accept="video/*" disabled={disabled || full} onPick={take}>
+            Add videos
+          </FilePicker>
+        </div>
+      </div>
+      {reading ? <p className="mt-3 text-sm font-medium">Adding {reading}</p> : null}
+      {localError || error ? <p className="mt-3 text-sm font-medium">{localError || error}</p> : null}
       {files.length ? (
-        <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {files.map((item) => (
-            <li key={item.id} className="overflow-hidden rounded-xl border border-ink/10 bg-surface">
-              {item.kind === "video" ? (
-                <video src={item.url} muted preload="metadata" className="aspect-square w-full bg-ink object-cover" />
-              ) : (
-                <img src={item.url} alt="" className="aspect-square w-full object-cover" />
-              )}
-              <div className="flex items-center gap-2 px-2.5 py-2">
-                <span className="min-w-0 flex-1 truncate text-xs">{item.file.name}</span>
-                <button type="button" className="shrink-0 text-xs text-mute underline-offset-2 hover:text-ink hover:underline" onClick={() => onRemove(item.id)}>
-                  Remove
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <div ref={listRef} className="mt-3 rounded-xl border border-ink/15 bg-mist/70 p-3" aria-live="polite">
+          <p className="text-sm font-semibold">{files.length === 1 ? "1 file added" : `${files.length} files added`}</p>
+          <p className="mt-0.5 text-xs leading-5 text-mute">Attached to this ticket. They are saved when you create it.</p>
+          <ul className="mt-3 space-y-2">
+            {files.map((item) => (
+              <li key={item.id} className="flex items-center gap-3 rounded-lg border border-ink/10 bg-paper px-3 py-2">
+                <span className="inline-flex shrink-0 rounded-full bg-ink px-2 py-0.5 text-[11px] font-medium text-paper">
+                  {item.kind === "video" ? "Video" : "Photo"}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">{item.file.name}</span>
+                  <span className="block text-xs text-mute">{formatBytes(item.file.size)} · ready to send</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3">
+            <MediaGrid
+              items={files.map((item) => ({ id: item.id, name: item.file.name, kind: item.kind, url: item.url }))}
+              onReplace={disabled ? undefined : onReplace}
+              onRemove={disabled ? undefined : onRemove}
+            />
+          </div>
+        </div>
       ) : null}
     </div>
   );
 }
 
+function formatBytes(size) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileId() {
+  return globalThis.crypto?.randomUUID?.() || `file-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function FilePicker({ accept, disabled, onPick, children }) {
+  return (
+    <label className={`inline-flex cursor-pointer items-center rounded-full border border-ink/15 bg-paper px-3 py-1.5 text-xs font-medium ${disabled ? "cursor-not-allowed opacity-40" : "hover:bg-ink/[0.04]"}`}>
+      <input
+        type="file"
+        accept={accept}
+        multiple
+        disabled={disabled}
+        className="sr-only"
+        onChange={async (event) => {
+          const input = event.currentTarget;
+          const originals = Array.from(input.files || []);
+          if (!originals.length || disabled) return;
+          try {
+            await onPick(originals);
+          } finally {
+            input.value = "";
+          }
+        }}
+      />
+      {children}
+    </label>
+  );
+}
+
 function FormSection({ title, children }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-ink/10 bg-paper">
+    <section className="rounded-2xl border border-ink/10 bg-paper">
       <h2 className="border-b border-ink/10 bg-mist px-4 py-2.5 text-xs font-medium uppercase tracking-[0.14em] text-mute sm:px-5">{title}</h2>
       <div className="grid gap-4 px-4 py-4 sm:px-5 sm:py-5">{children}</div>
     </section>

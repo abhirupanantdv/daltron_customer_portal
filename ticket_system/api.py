@@ -368,7 +368,8 @@ def upload_ticket_file():
     ticket_doctype = _doctypes()["ticket"]
     if not frappe.db.exists(ticket_doctype, ticket):
         frappe.throw(_("Ticket not found"), frappe.DoesNotExistError)
-    if not frappe.has_permission(ticket_doctype, "write", doc=ticket):
+    owner = frappe.db.get_value(ticket_doctype, ticket, "customer")
+    if owner != _portal_customer() and not frappe.has_permission(ticket_doctype, "write", doc=ticket):
         frappe.throw(_("You cannot update this ticket."), frappe.PermissionError)
 
     uploaded = frappe.request.files.get("file") if frappe.request else None
@@ -650,7 +651,7 @@ def _media_kind(filename, mime):
         return ""
     if media.startswith("image/") or re.search(r"\.(png|jpe?g|gif|webp|bmp|heic|heif)$", lower):
         return "image"
-    if media.startswith("video/") or re.search(r"\.(mp4|webm|mov|m4v|ogg)$", lower):
+    if media.startswith("video/") or re.search(r"\.(mp4|webm|mov|m4v|ogg|3gp|mkv|avi)$", lower):
         return "video"
     return ""
 
@@ -671,6 +672,9 @@ def _mime_for(filename, kind):
         "webm": "video/webm",
         "mov": "video/quicktime",
         "ogg": "video/ogg",
+        "3gp": "video/3gpp",
+        "mkv": "video/x-matroska",
+        "avi": "video/x-msvideo",
     }
     return types.get(ext) or ("video/mp4" if kind == "video" else "image/jpeg")
 
