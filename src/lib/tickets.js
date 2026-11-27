@@ -208,16 +208,15 @@ export function matchesFilter(ticket, filter, query) {
     const hay = [
       ticket.id,
       ticket.subject,
-      ticket.reportedBy,
       ticket.ticketType,
+      ticket.category,
+      ticket.subCategory,
+      ticket.subCategoryLabel,
       ticket.serviceCategory,
       ticket.impact,
-      ticket.urgency,
       ticket.priority,
-      ticket.source,
       ticket.erpStatus,
       ticket.description,
-      ticket.customerComplaint,
     ]
       .filter(Boolean)
       .join(" ")

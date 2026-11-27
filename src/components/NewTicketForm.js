@@ -22,15 +22,13 @@ const EMPTY = {
   contactMobile: "",
   customerEquipment: "",
   ticketType: "",
+  category: "",
+  subCategory: "",
   impact: "",
-  urgency: "",
   serviceCategory: "",
   priority: "Medium",
   subject: "",
-  reportedBy: "",
-  source: "Customer Portal",
   description: "",
-  customerComplaint: "",
 };
 
 export default function NewTicketForm() {
@@ -65,7 +63,6 @@ export default function NewTicketForm() {
         if (cancelled) return;
         const customers = asList(data?.customers);
         const priorities = asList(data?.priorities);
-        const sources = asList(data?.sources);
         setOptions({
           ...data,
           customers,
@@ -74,16 +71,15 @@ export default function NewTicketForm() {
           equipment: asList(data?.equipment),
           ticketTypes: asList(data?.ticketTypes),
           categories: asList(data?.categories),
+          ticketCategories: asOptions(data?.ticketCategories),
+          subCategories: asOptions(data?.subCategories),
           impacts: asList(data?.impacts),
-          urgencies: asList(data?.urgencies),
           priorities,
-          sources,
           statuses: asList(data?.statuses),
         });
         setForm((current) => ({
           ...current,
           priority: priorities.includes("Medium") ? "Medium" : priorities[0] || "",
-          source: sources.includes("Customer Portal") ? "Customer Portal" : current.source,
         }));
         if (data?.warnings) setErrors((current) => ({ ...current, form: data.warnings }));
       })
@@ -96,7 +92,11 @@ export default function NewTicketForm() {
   }, []);
 
   function setField(key, value) {
-    setForm((current) => ({ ...current, [key]: value }));
+    setForm((current) => {
+      const next = { ...current, [key]: value };
+      if (key === "category") next.subCategory = "";
+      return next;
+    });
   }
 
   function addFiles(list) {
@@ -175,21 +175,15 @@ export default function NewTicketForm() {
 
         <form noValidate onSubmit={submit} className="mt-6 grid gap-5">
           <FormSection title="Ticket">
+            <TextField label="Subject" id="subject" data-tour="field-subject" inputRef={subjectRef} value={form.subject} error={errors.subject} onChange={(value) => setField("subject", value)} placeholder="Short summary" maxLength={140} />
+            <TextArea label="Description" id="description" data-tour="field-description" value={form.description} onChange={(value) => setField("description", value)} placeholder="What happened" rows={5} />
             <div className="grid items-start gap-x-5 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
               <SelectField label="Ticket Type" id="ticket-type" value={form.ticketType} onChange={(value) => setField("ticketType", value)} choices={options?.ticketTypes || []} placeholder="No ticket type" />
+              <SelectField label="Category" id="category" value={form.category} onChange={(value) => setField("category", value)} options={options?.ticketCategories || []} placeholder="No category" />
+              <SelectField label="Sub Category" id="sub-category" value={form.subCategory} onChange={(value) => setField("subCategory", value)} options={(options?.subCategories || []).filter((item) => item.category === form.category)} placeholder={form.category ? "No sub category" : "Choose a category first"} disabled={!form.category} />
               <SelectField label="Impact" id="impact" value={form.impact} onChange={(value) => setField("impact", value)} choices={options?.impacts || []} placeholder="No impact" />
-              <SelectField label="Urgency" id="urgency" value={form.urgency} onChange={(value) => setField("urgency", value)} choices={options?.urgencies || []} placeholder="No urgency" />
               <SelectField label="Service Category" id="service-category" data-tour="field-category" value={form.serviceCategory} onChange={(value) => setField("serviceCategory", value)} choices={options?.categories || []} placeholder="No category" />
               <SelectField label="Priority" id="priority" data-tour="field-priority" value={form.priority} onChange={(value) => setField("priority", value)} choices={options?.priorities || []} placeholder="No priority" />
-            </div>
-            <TextField label="Subject" id="subject" data-tour="field-subject" inputRef={subjectRef} value={form.subject} error={errors.subject} onChange={(value) => setField("subject", value)} placeholder="Short summary" maxLength={140} />
-            <div className="grid items-start gap-x-5 gap-y-4 sm:grid-cols-2">
-              <TextField label="Reported By" id="reported-by" data-tour="field-contact" value={form.reportedBy} onChange={(value) => setField("reportedBy", value)} placeholder="Person who reported this" />
-              <SelectField label="Source" id="source" value={form.source} onChange={(value) => setField("source", value)} choices={options?.sources || []} placeholder="No source" />
-            </div>
-            <div className="grid items-start gap-x-5 gap-y-4 lg:grid-cols-2">
-              <TextArea label="Description" id="description" data-tour="field-description" value={form.description} onChange={(value) => setField("description", value)} placeholder="What happened" rows={3} />
-              <TextArea label="Complaint" id="customer-complaint" value={form.customerComplaint} onChange={(value) => setField("customerComplaint", value)} placeholder="What was reported" rows={3} />
             </div>
           </FormSection>
 
@@ -215,6 +209,19 @@ export default function NewTicketForm() {
 
 function asList(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function asOptions(value) {
+  return asList(value)
+    .map((item) => {
+      if (typeof item === "string") return { name: item, label: item, category: "" };
+      return {
+        name: item?.name || "",
+        label: item?.label || item?.name || "",
+        category: item?.category || "",
+      };
+    })
+    .filter((item) => item.name);
 }
 
 function fileKind(file) {

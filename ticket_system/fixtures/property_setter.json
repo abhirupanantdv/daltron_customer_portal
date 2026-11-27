@@ -1,0 +1,79 @@
+[
+  {
+    "doctype": "Property Setter",
+    "doctype_or_field": "DocField",
+    "doc_type": "Service Ticket",
+    "field_name": "ticket_type",
+    "property": "options",
+    "property_type": "Text",
+    "value": "Service Request\nIssue\nFeature enhancement / New Requirements",
+    "module": "Ticket System",
+    "name": "Service Ticket-ticket_type-options"
+  },
+  {
+    "doctype": "Property Setter",
+    "doctype_or_field": "DocField",
+    "doc_type": "Service Ticket",
+    "field_name": "impact",
+    "property": "options",
+    "property_type": "Text",
+    "value": "Low Impact\nSystem Operational Some features not working\nSystem Partially Down\nSystem Down",
+    "module": "Ticket System",
+    "name": "Service Ticket-impact-options"
+  },
+  {
+    "doctype": "Property Setter",
+    "doctype_or_field": "DocField",
+    "doc_type": "Service Ticket",
+    "field_name": "urgency",
+    "property": "hidden",
+    "property_type": "Check",
+    "value": "1",
+    "module": "Ticket System",
+    "name": "Service Ticket-urgency-hidden"
+  },
+  {
+    "doctype": "Property Setter",
+    "doctype_or_field": "DocField",
+    "doc_type": "Service Ticket",
+    "field_name": "reported_by",
+    "property": "hidden",
+    "property_type": "Check",
+    "value": "1",
+    "module": "Ticket System",
+    "name": "Service Ticket-reported_by-hidden"
+  },
+  {
+    "doctype": "Property Setter",
+    "doctype_or_field": "DocField",
+    "doc_type": "Service Ticket",
+    "field_name": "source",
+    "property": "hidden",
+    "property_type": "Check",
+    "value": "1",
+    "module": "Ticket System",
+    "name": "Service Ticket-source-hidden"
+  },
+  {
+    "doctype": "Property Setter",
+    "doctype_or_field": "DocField",
+    "doc_type": "Service Ticket",
+    "field_name": "source",
+    "property": "default",
+    "property_type": "Data",
+    "value": "",
+    "module": "Ticket System",
+    "name": "Service Ticket-source-default"
+  },
+  {
+    "doctype": "Property Setter",
+    "doctype_or_field": "DocField",
+    "doc_type": "Service Ticket",
+    "field_name": "customer_complaint",
+    "property": "hidden",
+    "property_type": "Check",
+    "value": "1",
+    "module": "Ticket System",
+    "name": "Service Ticket-customer_complaint-hidden"
+  }
+]

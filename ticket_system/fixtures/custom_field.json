@@ -1,0 +1,28 @@
+[
+  {
+    "doctype": "Custom Field",
+    "dt": "Service Ticket",
+    "fieldname": "category",
+    "label": "Category",
+    "fieldtype": "Link",
+    "options": "Category",
+    "insert_after": "ticket_type",
+    "in_standard_filter": 1,
+    "search_index": 1,
+    "module": "Ticket System",
+    "name": "Service Ticket-category"
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Service Ticket",
+    "fieldname": "sub_category",
+    "label": "Sub Category",
+    "fieldtype": "Link",
+    "options": "Sub Category",
+    "insert_after": "category",
+    "link_filters": "[[\"Sub Category\",\"category\",\"=\",\"eval:doc.category\"]]",
+    "in_standard_filter": 1,
+    "module": "Ticket System",
+    "name": "Service Ticket-sub_category"
+  }
+]

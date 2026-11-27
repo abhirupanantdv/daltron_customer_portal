@@ -19,17 +19,15 @@ const TICKET_FIELDS = [
   "contact_person",
   "contact_email",
   "contact_mobile",
-  "reported_by",
   "customer_equipment",
   "ticket_type",
+  "category",
+  "sub_category",
   "service_category",
   "impact",
-  "urgency",
   "priority",
-  "source",
   "status",
   "description",
-  "customer_complaint",
   "creation",
   "modified",
   "reported_datetime",
@@ -613,6 +611,7 @@ async function loadOptions(env) {
   const warnings = [];
   const fields = await selectFields(env, doctypes().ticket);
   warnings.push(...(fields.warnings || []));
+  const masters = await loadMasters(env, warnings);
   return {
     customers: [],
     sites: [],
@@ -620,10 +619,10 @@ async function loadOptions(env) {
     equipment: [],
     ticketTypes: fields.ticketTypes,
     categories: fields.categories,
+    ticketCategories: masters.ticketCategories,
+    subCategories: masters.subCategories,
     impacts: fields.impacts,
-    urgencies: fields.urgencies,
     priorities: fields.priorities,
-    sources: fields.sources,
     statuses: fields.statuses,
     warnings: warnings.join(" "),
   };
@@ -638,7 +637,8 @@ async function loadTickets(env) {
     orderBy: "modified desc",
   });
   const files = await loadTicketFiles(env);
-  return rows.map((row) => mapTicket(row, files.get(row.name)));
+  const labels = await subCategoryLabels(env, rows.map((row) => row.sub_category));
+  return rows.map((row) => mapTicket(row, files.get(row.name), labels));
 }
 
 async function loadTicket(env, name) {
@@ -648,7 +648,7 @@ async function loadTicket(env, name) {
   const ticket = doctypes().ticket;
   const body = await erp(env, `/api/resource/${encodeURIComponent(ticket)}/${encodeURIComponent(name)}`);
   if (body.data?.customer !== customer) return null;
-  return mapTicket(body.data, await loadTicketFiles(env, name));
+  return mapTicket(body.data, await loadTicketFiles(env, name), await subCategoryLabels(env, [body.data?.sub_category]));
 }
 
 async function loadTicketFiles(env, name) {
@@ -685,17 +685,24 @@ async function createTicket(env, input) {
   const portalEmail = String(env._portalUser || "").trim();
   assign(payload, "contact_email", portalEmail.includes("@") ? portalEmail : "");
   assign(payload, "contact_mobile", input.contactMobile);
-  assign(payload, "reported_by", input.reportedBy);
   assign(payload, "customer_equipment", input.customerEquipment);
   assignChoice(payload, "ticket_type", input.ticketType, options.ticketTypes, "ticket type");
+  const masters = await loadMasters(env, []);
+  const category = String(input.category || "").trim();
+  const subCategory = String(input.subCategory || "").trim();
+  if (category) {
+    if (!masters.ticketCategories.some((row) => row.name === category)) throw httpError(400, "Choose a category from the list.");
+    payload.category = category;
+  }
+  if (subCategory) {
+    const match = masters.subCategories.find((row) => row.name === subCategory);
+    if (!category || !match || match.category !== category) throw httpError(400, "Choose a sub category from the list.");
+    payload.sub_category = subCategory;
+  }
   assignChoice(payload, "service_category", input.serviceCategory, options.categories, "service category");
   assignChoice(payload, "impact", input.impact, options.impacts, "impact");
-  assignChoice(payload, "urgency", input.urgency, options.urgencies, "urgency");
   assignChoice(payload, "priority", input.priority, options.priorities, "priority");
-  assignChoice(payload, "source", input.source, options.sources, "source");
-  const complaint = String(input.customerComplaint || "").trim();
   const description = String(input.description || "").trim();
-  if (complaint) payload.customer_complaint = complaint;
   if (description) payload.description = toHtml(description);
 
   const created = await erp(env, `/api/resource/${encodeURIComponent(doctypes().ticket)}`, {
@@ -704,7 +711,7 @@ async function createTicket(env, input) {
     body: JSON.stringify(payload),
   });
 
-  return { ticket: mapTicket(created.data), warning: "" };
+  return { ticket: mapTicket(created.data, [], await subCategoryLabels(env, [created.data?.sub_category])), warning: "" };
 }
 
 async function uploadBuffer(env, docname, { filename, type, buffer }) {
@@ -758,25 +765,21 @@ async function selectFields(env, ticket = doctypes().ticket) {
     const docs = body.docs || body.message?.docs || [];
     const doc = docs.find((item) => item.name === ticket) || docs[0];
     const fields = doc?.fields || [];
-    const [ticketTypes, categories, impacts, urgencies, priorities, sources, statuses] = await Promise.all([
+    const [ticketTypes, categories, impacts, priorities, statuses] = await Promise.all([
       choiceValues(env, fields, "ticket_type", warnings, "ticket types"),
       choiceValues(env, fields, "service_category", warnings, "categories", CATEGORY_FALLBACK),
       choiceValues(env, fields, "impact", warnings, "impacts"),
-      choiceValues(env, fields, "urgency", warnings, "urgencies"),
       choiceValues(env, fields, "priority", warnings, "priorities", PRIORITY_FALLBACK),
-      choiceValues(env, fields, "source", warnings, "sources"),
       choiceValues(env, fields, "status", warnings, "statuses"),
     ]);
-    return { ticketTypes, categories, impacts, urgencies, priorities, sources, statuses, warnings };
+    return { ticketTypes, categories, impacts, priorities, statuses, warnings };
   } catch {
     warnings.push("Could not load ticket fields.");
     return {
       ticketTypes: [],
       categories: CATEGORY_FALLBACK,
       impacts: [],
-      urgencies: [],
       priorities: PRIORITY_FALLBACK,
-      sources: [],
       statuses: [],
       warnings,
     };
@@ -821,11 +824,51 @@ async function erp(env, requestPath, options = {}) {
   return body;
 }
 
-function mapTicket(doc, files = []) {
+async function loadMasters(env, warnings) {
+  const masters = { ticketCategories: [], subCategories: [] };
+  try {
+    const rows = await erpList(env, "Category", { fields: ["name"], orderBy: "name asc", limit: 200 });
+    masters.ticketCategories = rows.map((row) => ({ name: row.name, label: row.name }));
+  } catch {
+    warnings.push("Could not load ticket categories.");
+  }
+  try {
+    const rows = await erpList(env, "Sub Category", {
+      fields: ["name", "sub_category_name", "category"],
+      orderBy: "sub_category_name asc",
+      limit: 500,
+    });
+    masters.subCategories = rows.map((row) => ({
+      name: row.name,
+      label: row.sub_category_name || row.name,
+      category: row.category || "",
+    }));
+  } catch {
+    warnings.push("Could not load sub categories.");
+  }
+  return masters;
+}
+
+async function subCategoryLabels(env, names) {
+  const wanted = [...new Set(names.filter(Boolean))];
+  if (!wanted.length) return new Map();
+  try {
+    const rows = await erpList(env, "Sub Category", {
+      fields: ["name", "sub_category_name"],
+      filters: [["name", "in", wanted]],
+      limit: wanted.length,
+    });
+    return new Map(rows.map((row) => [row.name, row.sub_category_name || row.name]));
+  } catch {
+    return new Map();
+  }
+}
+
+function mapTicket(doc, files = [], subLabels = new Map()) {
   const description = plain(doc.description);
-  const customerComplaint = doc.customer_complaint || "";
   const createdAt = toIso(doc.reported_datetime || doc.creation);
   const updatedAt = toIso(doc.modified || doc.reported_datetime || doc.creation);
+  const subCategory = doc.sub_category || "";
   return {
     id: doc.name,
     subject: doc.subject || doc.name,
@@ -834,18 +877,17 @@ function mapTicket(doc, files = []) {
     contactPerson: doc.contact_person || "",
     contactEmail: doc.contact_email || "",
     contactMobile: doc.contact_mobile || "",
-    reportedBy: doc.reported_by || "",
     customerEquipment: doc.customer_equipment || "",
     ticketType: doc.ticket_type || "",
+    category: doc.category || "",
+    subCategory,
+    subCategoryLabel: subLabels.get(subCategory) || subCategory,
     serviceCategory: doc.service_category || "",
     impact: doc.impact || "",
-    urgency: doc.urgency || "",
     priority: doc.priority || "",
-    source: doc.source || "",
     status: doc.status || "",
     erpStatus: doc.status || "",
     description,
-    customerComplaint,
     createdAt,
     updatedAt,
     attachments: (files || []).map(mapFile).filter(Boolean),
@@ -853,7 +895,7 @@ function mapTicket(doc, files = []) {
       {
         id: `m-${doc.name}`,
         from: "you",
-        text: description || customerComplaint || doc.subject || "",
+        text: description || doc.subject || "",
         at: createdAt,
       },
     ],

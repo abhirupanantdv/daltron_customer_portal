@@ -286,12 +286,39 @@ body::after {
 .page-layer {
   position: absolute;
   inset: 0;
-  overflow-x: clip;
+  /* hidden, not clip: clip on one axis drops the vertical scrollbar in current Chrome. */
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink) 42%, transparent) transparent;
   outline: none;
   background: transparent;
+}
+
+.page-layer::-webkit-scrollbar,
+[data-status-menu]::-webkit-scrollbar {
+  display: block;
+  width: 10px;
+  height: 10px;
+}
+
+.page-layer::-webkit-scrollbar-thumb,
+[data-status-menu]::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--ink) 42%, transparent);
+  background-clip: padding-box;
+}
+
+.page-layer::-webkit-scrollbar-track,
+[data-status-menu]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-status-menu] {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink) 42%, transparent) transparent;
 }
 
 .page-transition.is-transitioning .page-layer {

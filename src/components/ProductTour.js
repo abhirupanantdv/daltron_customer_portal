@@ -8,6 +8,24 @@ import { hasSeenTour, pageHasTargets, rememberTour, stepsForPath, tourId } from 
 let active = null;
 let generation = 0;
 
+const APP_BASE = import.meta.env.PROD ? "/ticket" : "";
+
+function currentAppPath() {
+  let path = window.location.pathname || "/";
+  if (APP_BASE && (path === APP_BASE || path.startsWith(`${APP_BASE}/`))) {
+    path = path.slice(APP_BASE.length) || "/";
+  }
+  if (!path.startsWith("/")) path = `/${path}`;
+  if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
+  return path;
+}
+
+function samePage(pathname) {
+  let expected = pathname || "/";
+  if (expected.length > 1 && expected.endsWith("/")) expected = expected.slice(0, -1);
+  return currentAppPath() === expected;
+}
+
 function whenChromeReady(token, run) {
   document.documentElement.setAttribute("data-tour-open", "");
   window.dispatchEvent(new CustomEvent("anant-tour-open"));
@@ -16,9 +34,10 @@ function whenChromeReady(token, run) {
   function tick() {
     if (token !== generation) return;
     const header = document.querySelector("header");
-    const height = header?.getBoundingClientRect().height ?? 0;
+    const box = header?.getBoundingClientRect();
     const searchMoving = document.querySelector(".nav-search-slot-in, .nav-search-slot-out");
-    if ((height >= 60 && !searchMoving) || performance.now() - started > 800) run();
+    const ready = box && box.height >= 60 && box.top >= -1 && !searchMoving;
+    if (ready || performance.now() - started > 800) run();
     else requestAnimationFrame(tick);
   }
 
@@ -35,7 +54,7 @@ export function startPageTour(pathname) {
   const token = ++generation;
   whenChromeReady(token, () => {
     if (token !== generation) return;
-    if (window.location.pathname !== pathname) return;
+    if (!samePage(pathname)) return;
     const steps = stepsForPath(pathname);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const instance = driver({
@@ -91,7 +110,7 @@ export function usePageTour() {
 
     function attempt() {
       if (token !== generation) return;
-      if (window.location.pathname !== pathname) return;
+      if (!samePage(pathname)) return;
       if (!pageHasTargets(pathname)) {
         if (tries >= 10) return;
         tries += 1;

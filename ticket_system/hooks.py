@@ -31,3 +31,19 @@ add_to_apps_screen = [
 ]
 
 after_install = "ticket_system.install.after_install"
+after_migrate = "ticket_system.install.after_migrate"
+
+fixtures = [
+    {"dt": "Custom Field", "filters": [["module", "=", "Ticket System"]]},
+    {"dt": "Property Setter", "filters": [["module", "=", "Ticket System"]]},
+]
+
+doctype_js = {
+    "Service Ticket": "public/js/service_ticket.js",
+}
+
+doc_events = {
+    "Service Ticket": {
+        "validate": "ticket_system.service_ticket.validate",
+    }
+}

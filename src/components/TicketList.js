@@ -1,6 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import Lenis from "lenis";
 import { formatWhen, matchesFilter } from "@/lib/tickets";
 import { useTickets } from "@/components/TicketsProvider";
 import { IconPlus, IconSearch, IconTickets, PageFrame, fieldClass, primaryBtn } from "@/components/ui";
@@ -22,10 +21,6 @@ function filterLabel(id) {
   return id === "all" ? "All" : id;
 }
 
-function prefersReducedMotion() {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
 function IconChevron({ className }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
@@ -38,8 +33,6 @@ function StatusFilter({ filters, filter, tickets, query, onFilter }) {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
-  const scrollerRef = useRef(null);
-  const listRef = useRef(null);
   const currentCount = tickets.filter((ticket) => matchesFilter(ticket, filter, query)).length;
 
   useEffect(() => {
@@ -60,22 +53,6 @@ function StatusFilter({ filters, filter, tickets, query, onFilter }) {
       document.removeEventListener("mousedown", onPointer);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open]);
-
-  useLayoutEffect(() => {
-    if (!open) return undefined;
-    const wrapper = scrollerRef.current;
-    const content = listRef.current;
-    if (!wrapper || !content || prefersReducedMotion()) return undefined;
-    const lenis = new Lenis({
-      wrapper,
-      content,
-      eventsTarget: wrapper,
-      autoRaf: true,
-      lerp: 0.1,
-      overscroll: false,
-    });
-    return () => lenis.destroy();
   }, [open]);
 
   return (
@@ -102,11 +79,10 @@ function StatusFilter({ filters, filter, tickets, query, onFilter }) {
       </button>
       {open ? (
         <div
-          ref={scrollerRef}
           data-status-menu
           className="absolute right-0 z-20 mt-2 max-h-64 w-full overflow-y-auto overscroll-contain rounded-2xl bg-surface p-1.5 shadow-[0_18px_50px_rgba(9,31,43,0.18)] ring-1 ring-ink/10 dark:shadow-[0_18px_50px_rgba(0,0,0,0.45)]"
         >
-          <ul ref={listRef} id="status-filter-list" role="listbox" aria-label="Filter by status">
+          <ul id="status-filter-list" role="listbox" aria-label="Filter by status">
             {filters.map((id) => {
               const count = tickets.filter((ticket) => matchesFilter(ticket, id, query)).length;
               const on = filter === id;

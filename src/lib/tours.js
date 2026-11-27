@@ -105,11 +105,10 @@ const ticketSteps = [
 ];
 
 const newTicketSteps = [
+  step("[data-tour='field-subject']", "Subject", "Start here. A short line. This is the title on the service ticket.", { side: "bottom", align: "start" }),
+  step("[data-tour='field-description']", "Description", "What happened. Fill this in before the other fields.", { side: "bottom", align: "start" }),
   step("[data-tour='field-category']", "Service category", "Network, hardware, printer, and the other categories from the desk.", { side: "bottom", align: "start" }),
   step("[data-tour='field-priority']", "Priority", "Critical, high, medium, or low.", { side: "bottom", align: "start" }),
-  step("[data-tour='field-subject']", "Subject", "A short line. This is the title on the service ticket.", { side: "bottom", align: "start" }),
-  step("[data-tour='field-contact']", "Reported by", "The person who reported it. This is stored on the service ticket.", { side: "bottom", align: "start" }),
-  step("[data-tour='field-description']", "Description", "What happened. This is the description field on the service ticket.", { side: "top", align: "start" }),
   step("[data-tour='field-attachments']", "Photos and videos", "Add several. They are stored on the service ticket attachments.", { side: "top", align: "start" }),
   step("[data-tour='create-ticket']", "Create when you are ready", "Nothing is sent until you press this. Cancel returns to the list.", { side: "top", align: "end" }),
 ];

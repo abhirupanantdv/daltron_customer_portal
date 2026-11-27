@@ -19,17 +19,15 @@ TICKET_FIELDS = [
     "contact_person",
     "contact_email",
     "contact_mobile",
-    "reported_by",
     "customer_equipment",
     "ticket_type",
+    "category",
+    "sub_category",
     "service_category",
     "impact",
-    "urgency",
     "priority",
-    "source",
     "status",
     "description",
-    "customer_complaint",
     "creation",
     "modified",
     "reported_datetime",
@@ -293,10 +291,10 @@ def get_options():
         "equipment": [],
         "ticketTypes": load("ticket types", lambda: _choice_options(meta, "ticket_type")),
         "categories": load("categories", lambda: _choice_or_fallback(meta, "service_category", CATEGORY_FALLBACK)),
+        "ticketCategories": load("ticket categories", _ticket_categories),
+        "subCategories": load("sub categories", _sub_categories),
         "impacts": load("impacts", lambda: _choice_options(meta, "impact")),
-        "urgencies": load("urgencies", lambda: _choice_options(meta, "urgency")),
         "priorities": load("priorities", lambda: _choice_or_fallback(meta, "priority", PRIORITY_FALLBACK)),
-        "sources": load("sources", lambda: _choice_options(meta, "source")),
         "statuses": load("statuses", lambda: _choice_options(meta, "status")),
         "warnings": " ".join(str(item) for item in warnings),
     }
@@ -317,7 +315,8 @@ def get_tickets():
         limit_page_length=100,
     )
     files = _files_for([row.name for row in rows])
-    return {"tickets": [_map_ticket(row, files.get(row.name, [])) for row in rows]}
+    labels = _sub_category_labels([row.get("sub_category") for row in rows])
+    return {"tickets": [_map_ticket(row, files.get(row.name, []), labels) for row in rows]}
 
 
 @frappe.whitelist()
@@ -343,25 +342,22 @@ def create_ticket():
     _assign(payload, meta, "contact_person", data.get("contactPerson"))
     _assign(payload, meta, "contact_email", _portal_user_email())
     _assign(payload, meta, "contact_mobile", data.get("contactMobile"))
-    _assign(payload, meta, "reported_by", data.get("reportedBy"))
     _assign(payload, meta, "customer_equipment", data.get("customerEquipment"))
     _assign_choice(payload, meta, "ticket_type", data.get("ticketType"), "ticket type")
+    category = _assign_master(payload, meta, "category", data.get("category"), "Category", "category")
+    _assign_sub_category(payload, meta, category, data.get("subCategory"))
     _assign_choice(payload, meta, "service_category", data.get("serviceCategory"), "service category")
     _assign_choice(payload, meta, "impact", data.get("impact"), "impact")
-    _assign_choice(payload, meta, "urgency", data.get("urgency"), "urgency")
     _assign_choice(payload, meta, "priority", data.get("priority"), "priority")
-    _assign_choice(payload, meta, "source", data.get("source"), "source")
 
-    complaint = str(data.get("customerComplaint") or "").strip()
     description = str(data.get("description") or "").strip()
-    if complaint and meta.has_field("customer_complaint"):
-        payload["customer_complaint"] = complaint
     if description and meta.has_field("description"):
         payload["description"] = _to_html(description)
 
     doc = frappe.get_doc(payload)
     doc.insert()
-    return {"ticket": _map_ticket(doc.as_dict(), []), "warning": ""}
+    labels = _sub_category_labels([doc.get("sub_category")])
+    return {"ticket": _map_ticket(doc.as_dict(), [], labels), "warning": ""}
 
 
 @frappe.whitelist()
@@ -421,6 +417,49 @@ def _present_fields(meta, wanted):
     return [field for field in wanted if field in available] or ["name"]
 
 
+def _ticket_categories():
+    if not frappe.db.exists("DocType", "Category") or not frappe.has_permission("Category", "read"):
+        return []
+    rows = frappe.get_list("Category", fields=["name"], order_by="name asc", limit_page_length=200)
+    return [{"name": row.name, "label": row.name} for row in rows]
+
+
+def _sub_categories():
+    if not frappe.db.exists("DocType", "Sub Category") or not frappe.has_permission("Sub Category", "read"):
+        return []
+    rows = frappe.get_list(
+        "Sub Category",
+        fields=["name", "sub_category_name", "category"],
+        order_by="sub_category_name asc",
+        limit_page_length=500,
+    )
+    return [
+        {
+            "name": row.name,
+            "label": row.sub_category_name or row.name,
+            "category": row.category or "",
+        }
+        for row in rows
+    ]
+
+
+def _sub_category_labels(names):
+    wanted = []
+    for name in names:
+        text = str(name or "").strip()
+        if text and text not in wanted:
+            wanted.append(text)
+    if not wanted or not frappe.db.exists("DocType", "Sub Category"):
+        return {}
+    rows = frappe.get_all(
+        "Sub Category",
+        filters={"name": ["in", wanted]},
+        fields=["name", "sub_category_name"],
+        limit_page_length=len(wanted),
+    )
+    return {row.name: row.sub_category_name or row.name for row in rows}
+
+
 def _choice_options(meta, fieldname):
     field = meta.get_field(fieldname)
     if not field:
@@ -454,6 +493,26 @@ def _order(meta, order_by):
 
 def _lines(options):
     return [line.strip() for line in str(options or "").split("\n") if line.strip()]
+
+
+def _assign_master(payload, meta, fieldname, value, doctype, label):
+    text = str(value or "").strip()
+    if not text or not meta.has_field(fieldname):
+        return ""
+    if not frappe.db.exists(doctype, text):
+        frappe.throw(_("Choose a {0} from the list.").format(label))
+    payload[fieldname] = text
+    return text
+
+
+def _assign_sub_category(payload, meta, category, value):
+    text = str(value or "").strip()
+    if not text or not meta.has_field("sub_category"):
+        return
+    parent = frappe.db.get_value("Sub Category", text, "category") if frappe.db.exists("Sub Category", text) else ""
+    if not category or parent != category:
+        frappe.throw(_("Choose a sub category from the list."))
+    payload["sub_category"] = text
 
 
 def _assign(payload, meta, fieldname, value):
@@ -529,12 +588,13 @@ def _files_for(names):
     return grouped
 
 
-def _map_ticket(doc, files):
+def _map_ticket(doc, files, sub_labels=None):
     description = _plain(doc.get("description"))
-    complaint = doc.get("customer_complaint") or ""
     created = _to_iso(doc.get("reported_datetime") or doc.get("creation"))
     updated = _to_iso(doc.get("modified") or doc.get("reported_datetime") or doc.get("creation"))
     subject = doc.get("subject") or doc.get("name")
+    sub_name = doc.get("sub_category") or ""
+    sub_labels = sub_labels or {}
     return {
         "id": doc.get("name"),
         "subject": subject,
@@ -543,18 +603,17 @@ def _map_ticket(doc, files):
         "contactPerson": doc.get("contact_person") or "",
         "contactEmail": doc.get("contact_email") or "",
         "contactMobile": doc.get("contact_mobile") or "",
-        "reportedBy": doc.get("reported_by") or "",
         "customerEquipment": doc.get("customer_equipment") or "",
         "ticketType": doc.get("ticket_type") or "",
+        "category": doc.get("category") or "",
+        "subCategory": sub_name,
+        "subCategoryLabel": sub_labels.get(sub_name) or sub_name,
         "serviceCategory": doc.get("service_category") or "",
         "impact": doc.get("impact") or "",
-        "urgency": doc.get("urgency") or "",
         "priority": doc.get("priority") or "",
-        "source": doc.get("source") or "",
         "status": doc.get("status") or "",
         "erpStatus": doc.get("status") or "",
         "description": description,
-        "customerComplaint": complaint,
         "createdAt": created,
         "updatedAt": updated,
         "attachments": [item for item in (_map_file(file) for file in files or []) if item],
@@ -562,7 +621,7 @@ def _map_ticket(doc, files):
             {
                 "id": f"m-{doc.get('name')}",
                 "from": "you",
-                "text": description or complaint or subject or "",
+                "text": description or subject or "",
                 "at": created,
             }
         ],
