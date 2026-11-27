@@ -50,7 +50,7 @@ const homeSteps = [
   step(
     "[data-tour='home-search']",
     "Search from here",
-    "Type a subject or ticket number. The same search sits in the header on every other page.",
+    "Type a subject or ticket number. Matching tickets stay on this page.",
     { side: "bottom", align: "center" },
   ),
   step(
@@ -134,9 +134,9 @@ const detailSteps = [
     { side: "top", align: "start" },
   ),
   step(
-    "[data-tour='ticket-actions']",
-    "Talk to the desk",
-    "Open the chat to add more. Status is updated on the service desk.",
+    "[data-tour='ticket-thread']",
+    "Conversation",
+    "Replies from service management show here. Write back at the bottom of the thread.",
     { side: "top", align: "start" },
   ),
 ];
@@ -159,7 +159,7 @@ const chatSteps = [
   step(
     "[data-tour='chat-log']",
     "The conversation",
-    "Your messages sit on the right, and the desk on the left. Replies arrive during open hours.",
+    "Your notes and replies from service management, in the order they were sent.",
     { side: "top", align: "center" },
     hold,
   ),

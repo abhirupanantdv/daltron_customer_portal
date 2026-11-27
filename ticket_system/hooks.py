@@ -45,5 +45,8 @@ doctype_js = {
 doc_events = {
     "Service Ticket": {
         "validate": "ticket_system.service_ticket.validate",
-    }
+    },
+    "Comment": {
+        "after_insert": "ticket_system.ticket_reply.email_customer_reply",
+    },
 }

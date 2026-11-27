@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/components/AuthProvider";
+import Notifications from "@/components/Notifications";
 import Logo from "@/components/Logo";
 import TourButton, { startPageTour, usePageTour } from "@/components/ProductTour";
 import { IconHome, IconPlus, IconSearch, IconTickets, IconTour, IconUser, pagePad } from "@/components/ui";
@@ -296,6 +297,7 @@ export default function AppShell({ children }) {
 
   function applyQuery(value) {
     setQuery(value);
+    if (pathname === "/") return;
     const q = value.trim();
     const params = new URLSearchParams(pathname === "/tickets" ? location.search : "");
     if (q) params.set("q", q);
@@ -416,7 +418,7 @@ export default function AppShell({ children }) {
       <div className="relative h-dvh min-h-0 bg-transparent">
         <header
           inert={hideBar ? true : undefined}
-          className={`absolute inset-x-0 top-0 z-40 h-16 bg-brand text-white transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none dark:shadow-[inset_0_-1px_0_rgba(255,255,255,0.08)] ${hideBar ? "-translate-y-full" : "translate-y-0"}`}
+          className={`absolute inset-x-0 top-0 z-40 h-16 bg-[#071F2B] text-white transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${hideBar ? "-translate-y-full" : "translate-y-0"}`}
         >
           <div className={`${pagePad} flex h-16 items-center gap-2 sm:gap-6`}>
             <Link to="/" className="flex shrink-0 items-center outline-none focus-visible:opacity-80" aria-label="AnantDV support">
@@ -447,6 +449,7 @@ export default function AppShell({ children }) {
                   <IconSearch className="size-4" />
                 </button>
               )}
+              <Notifications />
               <div className={searchPresent ? "max-sm:hidden" : ""}>
                 <AccountMenu />
               </div>

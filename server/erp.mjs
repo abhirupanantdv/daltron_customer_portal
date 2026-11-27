@@ -475,6 +475,21 @@ async function route(env, req, res, requestUrl) {
     send(res, 200, await loadOptions(env));
     return;
   }
+  if (req.method === "GET" && pathname === "/api/erp/notifications") {
+    const body = await erp(env, "/api/method/ticket_system.api.get_notifications");
+    send(res, 200, body.message ?? body);
+    return;
+  }
+  if (req.method === "POST" && pathname === "/api/erp/notifications/read") {
+    const input = JSON.parse((await readBody(req)).toString("utf8") || "{}");
+    const body = await erp(env, "/api/method/ticket_system.api.mark_notification_read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: input.name || "" }),
+    });
+    send(res, 200, body.message ?? body);
+    return;
+  }
   if (req.method === "GET" && pathname === "/api/erp/tickets") {
     send(res, 200, { tickets: await loadTickets(env) });
     return;
@@ -492,6 +507,19 @@ async function route(env, req, res, requestUrl) {
   if (req.method === "POST" && pathname === "/api/erp/tickets") {
     const input = JSON.parse((await readBody(req)).toString("utf8") || "{}");
     send(res, 201, await createTicket(env, input));
+    return;
+  }
+  const replied = pathname.match(/^\/api\/erp\/tickets\/([^/]+)\/reply$/);
+  if (req.method === "POST" && replied) {
+    const name = decodeURIComponent(replied[1]);
+    if (!/^ST-\d{4}-\d+$/.test(name)) throw httpError(400, "Unknown ticket.");
+    const input = JSON.parse((await readBody(req)).toString("utf8") || "{}");
+    const body = await erp(env, "/api/method/ticket_system.api.reply_ticket", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticket: name, message: input.message || "" }),
+    });
+    send(res, 200, body.message ?? body);
     return;
   }
   const uploaded = pathname.match(/^\/api\/erp\/tickets\/([^/]+)\/files$/);
@@ -638,7 +666,9 @@ async function loadTickets(env) {
   });
   const files = await loadTicketFiles(env);
   const labels = await subCategoryLabels(env, rows.map((row) => row.sub_category));
-  return rows.map((row) => mapTicket(row, files.get(row.name), labels));
+  const comments = await loadComments(env, rows.map((row) => row.name));
+  const user = env._portalUser || "";
+  return rows.map((row) => mapTicket(row, files.get(row.name), labels, comments.get(row.name) || [], user));
 }
 
 async function loadTicket(env, name) {
@@ -648,7 +678,14 @@ async function loadTicket(env, name) {
   const ticket = doctypes().ticket;
   const body = await erp(env, `/api/resource/${encodeURIComponent(ticket)}/${encodeURIComponent(name)}`);
   if (body.data?.customer !== customer) return null;
-  return mapTicket(body.data, await loadTicketFiles(env, name), await subCategoryLabels(env, [body.data?.sub_category]));
+  const comments = await loadComments(env, [name]);
+  return mapTicket(
+    body.data,
+    await loadTicketFiles(env, name),
+    await subCategoryLabels(env, [body.data?.sub_category]),
+    comments.get(name) || [],
+    env._portalUser || "",
+  );
 }
 
 async function loadTicketFiles(env, name) {
@@ -864,7 +901,55 @@ async function subCategoryLabels(env, names) {
   }
 }
 
-function mapTicket(doc, files = [], subLabels = new Map()) {
+async function loadComments(env, names) {
+  const wanted = names.filter(Boolean);
+  const grouped = new Map();
+  if (!wanted.length) return grouped;
+  try {
+    const rows = await erpList(env, "Comment", {
+      fields: ["name", "content", "creation", "comment_by", "comment_email", "reference_name", "owner"],
+      filters: [
+        ["reference_doctype", "=", doctypes().ticket],
+        ["reference_name", "in", wanted],
+        ["comment_type", "=", "Comment"],
+      ],
+      limit: 500,
+      orderBy: "creation asc",
+    });
+    for (const row of rows) {
+      if (!String(row.comment_by || "").trim() || !row.reference_name) continue;
+      const list = grouped.get(row.reference_name) || [];
+      list.push(row);
+      grouped.set(row.reference_name, list);
+    }
+  } catch {
+    return grouped;
+  }
+  return grouped;
+}
+
+function threadMessages(comments, portalUser) {
+  const user = String(portalUser || "").trim().toLowerCase();
+  const messages = [];
+  for (const comment of comments || []) {
+    if (!String(comment.comment_by || "").trim()) continue;
+    const text = plain(comment.content);
+    if (!text) continue;
+    const owner = String(comment.owner || "").trim().toLowerCase();
+    const email = String(comment.comment_email || "").trim().toLowerCase();
+    const mine = Boolean(user) && (owner === user || email === user);
+    messages.push({
+      id: comment.name,
+      from: mine ? "you" : "support",
+      author: mine ? "" : String(comment.comment_by || "").trim(),
+      text,
+      at: toIso(comment.creation),
+    });
+  }
+  return messages;
+}
+
+function mapTicket(doc, files = [], subLabels = new Map(), comments = [], portalUser = "") {
   const description = plain(doc.description);
   const createdAt = toIso(doc.reported_datetime || doc.creation);
   const updatedAt = toIso(doc.modified || doc.reported_datetime || doc.creation);
@@ -891,14 +976,7 @@ function mapTicket(doc, files = [], subLabels = new Map()) {
     createdAt,
     updatedAt,
     attachments: (files || []).map(mapFile).filter(Boolean),
-    messages: [
-      {
-        id: `m-${doc.name}`,
-        from: "you",
-        text: description || doc.subject || "",
-        at: createdAt,
-      },
-    ],
+    messages: threadMessages(comments, portalUser),
   };
 }
 

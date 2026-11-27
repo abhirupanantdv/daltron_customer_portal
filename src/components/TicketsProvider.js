@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { fetchOptions, fetchTickets, postTicket, saveChats, uploadTicketFile, withLocalChat } from "@/lib/erpClient";
-import { byUpdated, planReply, uid } from "@/lib/tickets";
+import { fetchOptions, fetchTickets, postReply, postTicket, uploadTicketFile } from "@/lib/erpClient";
+import { byUpdated } from "@/lib/tickets";
 import LoadingScreen from "@/components/LoadingScreen";
 
 const TicketsContext = createContext(null);
@@ -17,9 +17,7 @@ export default function TicketsProvider({ children }) {
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(null);
   const [hydrated, setHydrated] = useState(false);
-  const [typingId, setTypingId] = useState(null);
   const [showSplash, setShowSplash] = useState(false);
-  const timersRef = useRef(new Map());
 
   useLayoutEffect(() => {
     if (sessionStorage.getItem("cove.splash.seen") === "1") return undefined;
@@ -59,17 +57,11 @@ export default function TicketsProvider({ children }) {
         setNow(Date.now());
       });
     const tick = setInterval(() => setNow(Date.now()), 30000);
-    const timers = timersRef.current;
     return () => {
       cancelled = true;
       clearInterval(tick);
-      for (const handle of timers.values()) clearTimeout(handle);
     };
   }, [reloadTickets]);
-
-  useEffect(() => {
-    if (hydrated && tickets.length) saveChats(tickets);
-  }, [tickets, hydrated]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -77,52 +69,18 @@ export default function TicketsProvider({ children }) {
     return () => clearTimeout(id);
   }, [toast]);
 
-  const queueReply = useCallback((id, plan) => {
-    setTypingId(id);
-    const existing = timersRef.current.get(id);
-    if (existing) clearTimeout(existing);
-    const handle = setTimeout(() => {
-      const at = new Date().toISOString();
-      setTickets((prev) =>
-        prev
-          .map((ticket) => {
-            if (ticket.id !== id) return ticket;
-            return {
-              ...ticket,
-              updatedAt: at,
-              messages: [...ticket.messages, { id: uid(), from: "support", text: plan.text, at }],
-            };
-          })
-          .sort(byUpdated),
-      );
-      setTypingId((current) => (current === id ? null : current));
-      timersRef.current.delete(id);
-    }, 1200);
-    timersRef.current.set(id, handle);
+  const sendMessage = useCallback(async (id, text) => {
+    const body = await postReply(id, text);
+    const next = body?.ticket;
+    if (!next?.id) throw new Error("The reply was not saved.");
+    setTickets((prev) => {
+      const existing = prev.find((ticket) => ticket.id === id);
+      const merged = existing
+        ? { ...existing, ...next, attachments: next.attachments?.length ? next.attachments : existing.attachments }
+        : next;
+      return [merged, ...prev.filter((ticket) => ticket.id !== id)].sort(byUpdated);
+    });
   }, []);
-
-  const sendMessage = useCallback(
-    (id, text) => {
-      const current = tickets.find((ticket) => ticket.id === id);
-      if (!current) return;
-      const at = new Date().toISOString();
-      setTickets((prev) =>
-        prev
-          .map((ticket) =>
-            ticket.id === id
-              ? {
-                  ...ticket,
-                  updatedAt: at,
-                  messages: [...ticket.messages, { id: uid(), from: "you", text, at }],
-                }
-              : ticket,
-          )
-          .sort(byUpdated),
-      );
-      queueReply(id, planReply(text));
-    },
-    [tickets, queueReply],
-  );
 
   const createTicket = useCallback(async (input) => {
     const { files = [], ...fields } = input;
@@ -140,7 +98,7 @@ export default function TicketsProvider({ children }) {
     }
     const fileWarning = failed.length === 1 ? `Could not attach ${failed[0]}.` : failed.length ? `Could not attach ${failed.length} files.` : "";
     const warning = [body.warning, fileWarning].filter(Boolean).join(" ");
-    const ticket = { ...withLocalChat([body.ticket])[0], attachments, uploadWarning: warning };
+    const ticket = { ...body.ticket, attachments, uploadWarning: warning };
     setTickets((prev) => [ticket, ...prev.filter((item) => item.id !== ticket.id)].sort(byUpdated));
     setToast(warning ? `Ticket ${ticket.id} created. ${warning}` : `Ticket ${ticket.id} created`);
     return ticket;
@@ -170,14 +128,13 @@ export default function TicketsProvider({ children }) {
       statuses,
       hydrated,
       now,
-      typingId,
       createTicket,
       sendMessage,
       refreshTickets,
       reloadTickets,
       copyId,
     }),
-    [tickets, statuses, hydrated, now, typingId, createTicket, sendMessage, refreshTickets, reloadTickets, copyId],
+    [tickets, statuses, hydrated, now, createTicket, sendMessage, refreshTickets, reloadTickets, copyId],
   );
 
   return (

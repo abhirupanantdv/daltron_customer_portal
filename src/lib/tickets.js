@@ -227,21 +227,6 @@ export function matchesFilter(ticket, filter, query) {
   return ticket.status === filter;
 }
 
-export function planReply(text) {
-  const value = text.toLowerCase();
-  if (/\bthanks\b|\bthank you\b/.test(value)) {
-    return { text: "Glad that helped. This thread stays here if you need anything else." };
-  }
-  if (/\burgent\b|\basap\b|\btoday\b/.test(value)) {
-    return { text: "Understood. I've flagged this as time-sensitive and someone is on it." };
-  }
-  const words = text.trim().split(/\s+/).filter(Boolean);
-  if (words.length < 4) {
-    return { text: "Thanks — a bit more detail will help us look in the right place." };
-  }
-  return { text: "Got it. I've added your note. The desk updates the status on this ticket." };
-}
-
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",

@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { formatClock, formatWhen } from "@/lib/tickets";
+import EmailThread from "@/components/EmailThread";
 import { useTickets } from "@/components/TicketsProvider";
-import { IconBack, IconSend, MissingTicket, PageSkeleton, TicketStatus, fieldClass, pagePad } from "@/components/ui";
+import { IconBack, MissingTicket, PageSkeleton, TicketStatus, pagePad } from "@/components/ui";
+import { formatWhen } from "@/lib/tickets";
 
 export default function ChatPage() {
   const { id } = useParams();
-  const { tickets, hydrated, now, typingId, sendMessage } = useTickets();
+  const { tickets, hydrated, now, sendMessage } = useTickets();
   const ticket = tickets.find((item) => item.id === id) ?? null;
 
   if (!ticket && !hydrated) return <PageSkeleton />;
@@ -32,126 +32,7 @@ export default function ChatPage() {
           <TicketStatus status={status} />
         </div>
       </div>
-      <Conversation ticket={ticket} now={now} typing={typingId === ticket.id} onSend={sendMessage} />
+      <EmailThread ticket={ticket} now={now} onSend={sendMessage} variant="page" logTour="chat-log" composeTour="chat-compose" />
     </div>
   );
-}
-
-function Conversation({ ticket, now, typing, onSend }) {
-  const [draft, setDraft] = useState("");
-  const boxRef = useRef(null);
-  const endRef = useRef(null);
-  const logRef = useRef(null);
-  const opened = useRef(false);
-
-  useEffect(() => {
-    const log = logRef.current;
-    if (!log) return;
-    const overflow = log.scrollHeight - log.clientHeight;
-    if (overflow <= 24) {
-      log.scrollTop = 0;
-    } else {
-      endRef.current?.scrollIntoView({ behavior: opened.current ? "smooth" : "auto", block: "end" });
-    }
-    opened.current = true;
-  }, [ticket.messages.length, typing]);
-
-  useEffect(() => {
-    if (boxRef.current && draft === "") boxRef.current.style.height = "auto";
-  }, [draft]);
-
-  function resize(event) {
-    const el = event.currentTarget;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
-  }
-
-  function submit(event) {
-    event.preventDefault();
-    const text = draft.trim();
-    if (!text) return;
-    onSend(ticket.id, text);
-    setDraft("");
-  }
-
-  return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div ref={logRef} data-tour="chat-log" role="log" aria-label="Conversation" className={`${pagePad} min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain py-5`}>
-        {ticket.messages.map((message) => (
-          <Message key={message.id} message={message} now={now} />
-        ))}
-        {typing ? (
-          <div className="flex items-end gap-2">
-            <Avatar />
-            <div className="rounded-2xl rounded-bl-md bg-mist px-4 py-3" aria-label="Alex is typing">
-              <span className="flex gap-1">
-                {[0, 140, 280].map((delay) => (
-                  <span key={delay} className="size-1.5 animate-bounce rounded-full bg-ink/45 motion-reduce:animate-none" style={{ animationDelay: `${delay}ms` }} />
-                ))}
-              </span>
-            </div>
-          </div>
-        ) : null}
-        <div ref={endRef} />
-      </div>
-      <form data-tour="chat-compose" onSubmit={submit} className={`${pagePad} shrink-0 border-t border-ink/10 py-3`}>
-        <div className="flex items-end gap-2">
-          <label className="sr-only" htmlFor="reply">
-            Message about {ticket.subject}
-          </label>
-          <textarea
-            id="reply"
-            ref={boxRef}
-            rows={1}
-            value={draft}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              resize(event);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey && window.matchMedia("(min-width: 768px)").matches) {
-                event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
-              }
-            }}
-            placeholder="Write a message…"
-            className={`${fieldClass} max-h-32 resize-none bg-mist`}
-          />
-          <button
-            type="submit"
-            className="grid size-11 shrink-0 place-items-center rounded-full bg-ink text-paper transition hover:bg-ink-soft disabled:opacity-40"
-            disabled={!draft.trim()}
-            aria-label="Send message"
-          >
-            <IconSend className="size-5" />
-          </button>
-        </div>
-        <p className="mt-2 hidden text-xs text-mute md:block">Enter to send · Shift+Enter for a new line</p>
-      </form>
-    </section>
-  );
-}
-
-function Message({ message, now }) {
-  if (message.from === "system") {
-    return <p className="py-1 text-center text-xs text-mute">{message.text}</p>;
-  }
-  const mine = message.from === "you";
-  return (
-    <div className={`flex items-end gap-2 ${mine ? "flex-row-reverse" : ""}`}>
-      {mine ? null : <Avatar />}
-      <div className={`flex max-w-[min(40rem,85%)] flex-col ${mine ? "items-end" : "items-start"}`}>
-        <span className="mb-1 px-1 text-xs text-mute">
-          {mine ? "You" : "Alex"} · {formatClock(message.at, now)}
-        </span>
-        <p className={`whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${mine ? "rounded-br-md bg-ink text-paper" : "rounded-bl-md bg-mist text-ink"}`}>
-          {message.text}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function Avatar() {
-  return <span className="grid size-7 shrink-0 place-items-center rounded-full bg-ink text-xs font-medium text-paper">A</span>;
 }

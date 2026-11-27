@@ -12,7 +12,7 @@ export default function SiteFooter() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="mt-auto border-t border-white/10 bg-brand text-white">
+    <footer className="mt-auto border-t border-white/10 bg-[#071F2B] text-white">
       <div className={`${pagePad} py-10 sm:py-12`}>
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_auto_auto] lg:gap-16">
           <div>

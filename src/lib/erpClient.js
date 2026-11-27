@@ -1,36 +1,6 @@
 import { appLoginHref, siteCsrfHeaders } from "@/lib/auth";
 
-const CHAT_KEY = "cove.erp.chat.v1";
 const ON_SITE = import.meta.env.PROD;
-
-export function loadChats() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(CHAT_KEY) || "{}");
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-export function saveChats(tickets) {
-  const chats = {};
-  for (const ticket of tickets) {
-    if (Array.isArray(ticket.messages) && ticket.messages.length) chats[ticket.id] = ticket.messages;
-  }
-  try {
-    localStorage.setItem(CHAT_KEY, JSON.stringify(chats));
-  } catch {
-    // A full browser store should not take down the page. The thread stays in memory.
-  }
-}
-
-export function withLocalChat(tickets) {
-  const chats = loadChats();
-  return tickets.map((ticket) => {
-    const messages = chats[ticket.id];
-    return Array.isArray(messages) && messages.length ? { ...ticket, messages } : ticket;
-  });
-}
 
 function errorMessage(body) {
   if (body?.error) return body.error;
@@ -112,7 +82,7 @@ export async function fetchTickets() {
   const body = ON_SITE
     ? await siteCall("get_tickets")
     : await readJson(await fetch("/api/erp/tickets"));
-  return withLocalChat(body.tickets || []);
+  return body.tickets || [];
 }
 
 export async function fetchOptions() {
@@ -133,6 +103,45 @@ export async function postTicket(input) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function fetchNotifications() {
+  if (ON_SITE) return siteCall("get_notifications");
+  return readJson(await fetch("/api/erp/notifications"));
+}
+
+export async function markNotificationRead(name) {
+  if (ON_SITE) {
+    return siteCall("mark_notification_read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+  }
+  return readJson(
+    await fetch("/api/erp/notifications/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }),
+  );
+}
+
+export async function postReply(id, message) {
+  if (ON_SITE) {
+    return siteCall("reply_ticket", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticket: id, message }),
+    });
+  }
+  return readJson(
+    await fetch(`/api/erp/tickets/${encodeURIComponent(id)}/reply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
     }),
   );
 }

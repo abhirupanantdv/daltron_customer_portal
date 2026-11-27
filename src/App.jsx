@@ -1,4 +1,4 @@
-import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import AppShell from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
 import ChatPage from "@/components/ChatPage";
@@ -35,11 +35,61 @@ function RequireAuth() {
   return (
     <TicketsProvider>
       <AppShell>
-        <PageTransition>
-          <Outlet />
-        </PageTransition>
+        <PageTransition>{(layerLocation) => <SupportRoutes location={layerLocation} />}</PageTransition>
       </AppShell>
     </TicketsProvider>
+  );
+}
+
+function SupportRoutes({ location }) {
+  return (
+    <Routes location={location}>
+      <Route
+        path="/"
+        element={
+          <>
+            <DocumentTitle title="AnantDV Support" />
+            <Overview />
+          </>
+        }
+      />
+      <Route
+        path="/tickets"
+        element={
+          <>
+            <DocumentTitle title="Tickets — AnantDV" />
+            <TicketList />
+          </>
+        }
+      />
+      <Route
+        path="/tickets/new"
+        element={
+          <>
+            <DocumentTitle title="New ticket — AnantDV" />
+            <NewTicketForm />
+          </>
+        }
+      />
+      <Route
+        path="/tickets/:id"
+        element={
+          <>
+            <DocumentTitle title="Ticket — AnantDV" />
+            <TicketDetail />
+          </>
+        }
+      />
+      <Route
+        path="/tickets/:id/chat"
+        element={
+          <>
+            <DocumentTitle title="Chat — AnantDV" />
+            <ChatPage />
+          </>
+        }
+      />
+    </Routes>
   );
 }
 
@@ -47,53 +97,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginRoute />} />
-      <Route element={<RequireAuth />}>
-        <Route
-          path="/"
-          element={
-            <>
-              <DocumentTitle title="AnantDV Support" />
-              <Overview />
-            </>
-          }
-        />
-        <Route
-          path="/tickets"
-          element={
-            <>
-              <DocumentTitle title="Tickets — AnantDV" />
-              <TicketList />
-            </>
-          }
-        />
-        <Route
-          path="/tickets/new"
-          element={
-            <>
-              <DocumentTitle title="New ticket — AnantDV" />
-              <NewTicketForm />
-            </>
-          }
-        />
-        <Route
-          path="/tickets/:id"
-          element={
-            <>
-              <DocumentTitle title="Ticket — AnantDV" />
-              <TicketDetail />
-            </>
-          }
-        />
-        <Route
-          path="/tickets/:id/chat"
-          element={
-            <>
-              <DocumentTitle title="Chat — AnantDV" />
-              <ChatPage />
-            </>
-          }
-        />
-      </Route>
+      <Route path="/*" element={<RequireAuth />} />
     </Routes>
   );
 }

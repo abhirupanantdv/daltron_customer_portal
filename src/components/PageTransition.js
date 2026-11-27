@@ -3,8 +3,7 @@ import { useLocation, useNavigationType } from "react-router-dom";
 import gsap from "gsap";
 import SiteFooter from "@/components/SiteFooter";
 
-const ENTER_OPACITY = 0.94;
-const EXIT_OPACITY = 0.94;
+const SLIDE_DURATION = 0.6;
 
 function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -52,25 +51,6 @@ function advanceHistory(history, location, navigationType) {
     history: { entries, index, seenKey: location.key, direction },
     direction,
   };
-}
-
-function poseOf(element) {
-  const xPercent = Number(gsap.getProperty(element, "xPercent"));
-  const opacity = Number(gsap.getProperty(element, "opacity"));
-  return {
-    xPercent: Number.isFinite(xPercent) ? xPercent : 0,
-    opacity: Number.isFinite(opacity) ? opacity : 1,
-  };
-}
-
-function inlinePose(element) {
-  if (!element.style.transform) return null;
-  return poseOf(element);
-}
-
-function travelDuration(distance) {
-  const span = Math.min(1, Math.abs(distance) / 100);
-  return 0.32 + 0.2 * span;
 }
 
 function findLayer(root, pathname) {
@@ -132,36 +112,39 @@ export default function PageTransition({ children }) {
   const rootRef = useRef(null);
   const activeIdRef = useRef(0);
 
+  // Render from the next stage in this pass. Waiting for setStage would paint the
+  // destination page at rest, and only then start the slide.
+  let view = stage;
   if (location.key !== stage.current.key) {
     const { history, direction } = advanceHistory(stage.history, location, navigationType);
     const pathnameChanged = location.pathname !== stage.current.pathname;
     const animate = pathnameChanged && direction !== "none" && !prefersReducedMotion();
-
     if (animate) {
-      setStage({
+      view = {
         current: location,
         previous: stage.current,
         direction,
         id: stage.id + 1,
         history,
-      });
+      };
     } else if (pathnameChanged) {
-      setStage({
+      view = {
         current: location,
         previous: null,
         direction: "none",
         id: stage.id + 1,
         history,
-      });
+      };
     } else {
-      setStage({ ...stage, current: location, history });
+      view = { ...stage, current: location, history };
     }
+    setStage(view);
   }
 
-  const motionId = stage.id;
-  const direction = stage.direction;
-  const currentPath = stage.current.pathname;
-  const previousPath = stage.previous ? stage.previous.pathname : "";
+  const motionId = view.id;
+  const direction = view.direction;
+  const currentPath = view.current.pathname;
+  const previousPath = view.previous ? view.previous.pathname : "";
   const transitioning = previousPath !== "" && direction !== "none";
 
   useLayoutEffect(() => {
@@ -189,57 +172,61 @@ export default function PageTransition({ children }) {
     activeIdRef.current = activeId;
     const forward = direction === "forward";
 
-    const context = gsap.context(() => {
-      const movingEl = forward ? currentEl : previousEl;
-      const restingEl = forward ? previousEl : currentEl;
-      const movingPose = inlinePose(movingEl);
-      const fromX = movingPose ? movingPose.xPercent : forward ? 100 : 0;
-      const fromOpacity = movingPose ? movingPose.opacity : forward ? ENTER_OPACITY : 1;
+    const movingEl = forward ? currentEl : previousEl;
+    const restingEl = forward ? previousEl : currentEl;
+    // Forward: the next page slides in from the right. Back: the current
+    // page slides back off to the right. x stays 0 so a percentage slide
+    // cannot pick up a leftover pixel translation.
+    const fromX = forward ? 100 : 0;
+    const toX = forward ? 0 : 100;
 
-      // One sheet moves. The page underneath is pinned so a second navigation
-      // cannot leave two transforms running.
-      gsap.killTweensOf([currentEl, previousEl]);
-      gsap.set(restingEl, { xPercent: 0, opacity: 1, force3D: true });
-      gsap.set(movingEl, { xPercent: fromX, opacity: fromOpacity, force3D: true });
-
-      const distance = forward ? fromX : 100 - fromX;
-      const duration = travelDuration(distance);
-      const timeline = gsap.timeline({
+    gsap.killTweensOf([currentEl, previousEl]);
+    gsap.set(restingEl, { x: 0, y: 0, xPercent: 0, force3D: true });
+    const tween = gsap.fromTo(
+      movingEl,
+      { x: 0, y: 0, xPercent: fromX, force3D: true },
+      {
+        x: 0,
+        y: 0,
+        xPercent: toX,
+        duration: SLIDE_DURATION,
+        ease: forward ? "power3.out" : "power3.inOut",
+        overwrite: true,
         onComplete: () => {
           if (activeIdRef.current !== activeId) return;
-          gsap.set(currentEl, { clearProps: "transform,opacity" });
           setStage((prev) => (prev.id === activeId ? { ...prev, previous: null, direction: "none" } : prev));
         },
-      });
-
-      if (forward) {
-        timeline.to(movingEl, { xPercent: 0, duration, ease: "power3.out", force3D: true }, 0);
-        timeline.to(movingEl, { opacity: 1, duration: duration * 0.28, ease: "power1.out" }, 0);
-      } else {
-        timeline.to(movingEl, { xPercent: 100, duration, ease: "power3.inOut", force3D: true }, 0);
-        timeline.to(movingEl, { opacity: EXIT_OPACITY, duration: duration * 0.3, ease: "power1.in" }, duration * 0.7);
-      }
-    }, root);
+      },
+    );
 
     return () => {
       activeIdRef.current = -1;
-      // kill() stops the timeline without restoring its start transform.
-      // revert() would snap a settled or in-flight page back to translateX(100%).
-      if (currentEl.isConnected || previousEl.isConnected) context.kill();
-      else context.revert();
+      tween.kill();
     };
   }, [motionId, direction, currentPath, previousPath]);
+
+  useLayoutEffect(() => {
+    if (previousPath) return undefined;
+    const root = rootRef.current;
+    if (!root) return undefined;
+    for (const el of root.querySelectorAll(".page-layer")) {
+      if (el.style.transform || el.style.opacity) {
+        gsap.set(el, { clearProps: "transform,opacity", lazy: false });
+      }
+    }
+    return undefined;
+  }, [previousPath, motionId]);
 
   return (
     <div ref={rootRef} className={transitioning ? "page-transition is-transitioning" : "page-transition"}>
       {transitioning ? (
-        <PageLayer key={previousPath} location={stage.previous} className={layerClass("previous", direction)} suspended>
+        <PageLayer key={previousPath} location={view.previous} className={layerClass("previous", direction)} suspended>
           {children}
         </PageLayer>
       ) : null}
       <PageLayer
         key={currentPath}
-        location={stage.current}
+        location={view.current}
         className={transitioning ? layerClass("current", direction) : "page-layer"}
         suspended={transitioning && direction === "back"}
       >

@@ -314,9 +314,11 @@ def get_tickets():
         order_by="modified desc",
         limit_page_length=100,
     )
-    files = _files_for([row.name for row in rows])
+    names = [row.name for row in rows]
+    files = _files_for(names)
     labels = _sub_category_labels([row.get("sub_category") for row in rows])
-    return {"tickets": [_map_ticket(row, files.get(row.name, []), labels) for row in rows]}
+    comments = _comments_for(names)
+    return {"tickets": [_map_ticket(row, files.get(row.name, []), labels, comments.get(row.name, [])) for row in rows]}
 
 
 @frappe.whitelist()
@@ -358,6 +360,89 @@ def create_ticket():
     doc.insert()
     labels = _sub_category_labels([doc.get("sub_category")])
     return {"ticket": _map_ticket(doc.as_dict(), [], labels), "warning": ""}
+
+
+@frappe.whitelist(methods=["POST"])
+def reply_ticket():
+    data = _request_data()
+    ticket = str(data.get("ticket") or "").strip()
+    text = str(data.get("message") or "").strip()
+    if not TICKET_NAME.match(ticket):
+        frappe.throw(_("Unknown ticket."))
+    if not text:
+        frappe.throw(_("Write a reply."))
+    ticket_doctype = _doctypes()["ticket"]
+    if not frappe.db.exists(ticket_doctype, ticket):
+        frappe.throw(_("Ticket not found"), frappe.DoesNotExistError)
+    if frappe.db.get_value(ticket_doctype, ticket, "customer") != _portal_customer():
+        frappe.throw(_("You cannot update this ticket."), frappe.PermissionError)
+
+    user = frappe.session.user
+    full_name = frappe.db.get_value("User", user, "full_name") or user
+    frappe.flags.skip_ticket_reply_email = True
+    try:
+        frappe.get_doc(
+            {
+                "doctype": "Comment",
+                "comment_type": "Comment",
+                "reference_doctype": ticket_doctype,
+                "reference_name": ticket,
+                "comment_email": user,
+                "comment_by": full_name,
+                "content": _to_html(text),
+            }
+        ).insert(ignore_permissions=True)
+    finally:
+        frappe.flags.skip_ticket_reply_email = False
+
+    doc = frappe.get_doc(ticket_doctype, ticket)
+    labels = _sub_category_labels([doc.get("sub_category")])
+    files = _files_for([doc.name])
+    comments = _comments_for([doc.name])
+    return {"ticket": _map_ticket(doc.as_dict(), files.get(doc.name, []), labels, comments.get(doc.name, []))}
+
+
+@frappe.whitelist()
+def get_notifications():
+    user = frappe.session.user
+    if not user or user == "Guest":
+        frappe.throw(_("Sign in to continue."), frappe.PermissionError)
+    ticket = _doctypes()["ticket"]
+    rows = frappe.get_list(
+        "Notification Log",
+        filters={"for_user": user, "document_type": ticket},
+        fields=["name", "title", "description", "document_name", "read", "creation"],
+        order_by="creation desc",
+        limit_page_length=20,
+    )
+    unread = frappe.db.count("Notification Log", {"for_user": user, "document_type": ticket, "read": 0})
+    return {
+        "unread": unread,
+        "notifications": [
+            {
+                "id": row.name,
+                "title": _plain(row.title) or row.document_name or "",
+                "text": _plain(row.description),
+                "ticket": row.document_name or "",
+                "read": bool(row.read),
+                "at": _to_iso(row.creation),
+            }
+            for row in rows
+        ],
+    }
+
+
+@frappe.whitelist(methods=["POST"])
+def mark_notification_read():
+    user = frappe.session.user
+    if not user or user == "Guest":
+        frappe.throw(_("Sign in to continue."), frappe.PermissionError)
+    data = _request_data()
+    name = str(data.get("name") or "").strip()
+    if not name or not frappe.db.exists("Notification Log", {"name": name, "for_user": user}):
+        frappe.throw(_("Notification not found"), frappe.DoesNotExistError)
+    frappe.db.set_value("Notification Log", name, "read", 1, update_modified=False)
+    return {"ok": True}
 
 
 @frappe.whitelist()
@@ -567,6 +652,33 @@ def _equipment_rows():
     return result
 
 
+def _comments_for(names):
+    grouped = {}
+    if not names or not frappe.db.exists("DocType", "Comment"):
+        return grouped
+    ticket = _doctypes()["ticket"]
+    try:
+        rows = frappe.get_all(
+            "Comment",
+            filters={
+                "reference_doctype": ticket,
+                "reference_name": ["in", names],
+                "comment_type": "Comment",
+            },
+            fields=["name", "content", "creation", "comment_by", "comment_email", "reference_name", "owner"],
+            order_by="creation asc",
+            limit_page_length=500,
+        )
+    except Exception:
+        return grouped
+    allowed = set(names)
+    for row in rows:
+        if row.reference_name not in allowed or not str(row.get("comment_by") or "").strip():
+            continue
+        grouped.setdefault(row.reference_name, []).append(row)
+    return grouped
+
+
 def _files_for(names):
     grouped = {}
     doctypes = _doctypes()
@@ -589,7 +701,7 @@ def _files_for(names):
     return grouped
 
 
-def _map_ticket(doc, files, sub_labels=None):
+def _map_ticket(doc, files, sub_labels=None, comments=None):
     description = _plain(doc.get("description"))
     created = _to_iso(doc.get("reported_datetime") or doc.get("creation"))
     updated = _to_iso(doc.get("modified") or doc.get("reported_datetime") or doc.get("creation"))
@@ -618,15 +730,32 @@ def _map_ticket(doc, files, sub_labels=None):
         "createdAt": created,
         "updatedAt": updated,
         "attachments": [item for item in (_map_file(file) for file in files or []) if item],
-        "messages": [
-            {
-                "id": f"m-{doc.get('name')}",
-                "from": "you",
-                "text": description or subject or "",
-                "at": created,
-            }
-        ],
+        "messages": _thread_messages(comments),
     }
+
+
+def _thread_messages(comments):
+    portal_user = str(frappe.session.user or "").strip().lower()
+    messages = []
+    for comment in comments or []:
+        if not str(comment.get("comment_by") or "").strip():
+            continue
+        text = _plain(comment.get("content"))
+        if not text:
+            continue
+        owner = str(comment.get("owner") or "").strip().lower()
+        email = str(comment.get("comment_email") or "").strip().lower()
+        mine = bool(portal_user) and (owner == portal_user or email == portal_user)
+        messages.append(
+            {
+                "id": comment.get("name"),
+                "from": "you" if mine else "support",
+                "author": "" if mine else str(comment.get("comment_by") or "").strip(),
+                "text": text,
+                "at": _to_iso(comment.get("creation")),
+            }
+        )
+    return messages
 
 
 def _map_file(file):

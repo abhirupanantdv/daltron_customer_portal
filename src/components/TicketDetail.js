@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
-import { useTickets } from "@/components/TicketsProvider";
+import EmailThread from "@/components/EmailThread";
 import { MediaGrid } from "@/components/MediaPreview";
-import { IconBack, IconChat, MissingTicket, PageFrame, PageSkeleton, formatDay, primaryBtn } from "@/components/ui";
+import { useTickets } from "@/components/TicketsProvider";
+import { IconBack, MissingTicket, PageFrame, PageSkeleton, formatDay } from "@/components/ui";
 
 export default function TicketDetail() {
   const { id } = useParams();
   const location = useLocation();
   const uploadWarning = location.state?.uploadWarning || "";
-  const { tickets, hydrated, copyId, reloadTickets } = useTickets();
+  const { tickets, hydrated, now, copyId, reloadTickets, sendMessage } = useTickets();
   const ticket = tickets.find((item) => item.id === id) ?? null;
   const [lookup, setLookup] = useState("");
 
@@ -24,28 +25,21 @@ export default function TicketDetail() {
   if (!ticket && lookup !== id) return <PageSkeleton />;
   if (!ticket) return <MissingTicket />;
 
-  const messages = ticket.messages.filter((message) => message.from !== "system").length;
   const status = ticket.status || ticket.erpStatus;
   const description = ticket.description?.trim() || "";
   const tone = statusTone(status);
 
   return (
     <PageFrame>
-      <div className="cove-in mx-auto w-full max-w-5xl">
+      <div className="cove-in w-full">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link to="/tickets" className="inline-flex items-center gap-1.5 text-sm text-mute transition hover:text-ink">
             <IconBack className="size-4" />
             All tickets
           </Link>
-          <div data-tour="ticket-actions" className="flex flex-wrap items-center gap-2">
-            <span data-tour="ticket-status">
-              <StatusPill status={status} tone={tone} />
-            </span>
-            <Link to={`/tickets/${ticket.id}/chat`} className={primaryBtn}>
-              <IconChat className="size-4" />
-              {messages ? `Open chat · ${messages}` : "Open chat"}
-            </Link>
-          </div>
+          <span data-tour="ticket-status">
+            <StatusPill status={status} tone={tone} />
+          </span>
         </div>
 
         <article className="mt-6 overflow-hidden rounded-[1.75rem] border border-ink/10 bg-surface">
@@ -77,17 +71,8 @@ export default function TicketDetail() {
             </section>
           ) : null}
 
-          <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_19rem]">
-            <div className="min-w-0">
-              <section data-tour="ticket-request" aria-label="Request" className="px-6 py-6 sm:px-8 sm:py-7">
-                <h2 className="text-sm font-semibold">Description</h2>
-                <p className={`mt-3 max-w-3xl whitespace-pre-wrap text-[15px] leading-7 ${description ? "text-ink" : "text-mute"}`}>
-                  {description || "No description was stored with this ticket."}
-                </p>
-              </section>
-            </div>
-
-            <aside className="space-y-8 border-t border-ink/10 bg-mist/70 px-6 py-6 sm:px-8 lg:border-l lg:border-t-0">
+          <div className="lg:grid lg:grid-cols-[19rem_minmax(0,1fr)]">
+            <aside className="order-2 space-y-8 border-t border-ink/10 bg-mist/70 px-6 py-6 sm:px-8 lg:order-1 lg:border-r lg:border-t-0">
               <FactList
                 title="Classification"
                 facts={[
@@ -119,6 +104,22 @@ export default function TicketDetail() {
                 ]}
               />
             </aside>
+
+            <div className="order-1 min-w-0 lg:order-2">
+              <section data-tour="ticket-request" aria-label="Request" className="px-6 py-6 sm:px-8 sm:py-7">
+                <h2 className="text-sm font-semibold">Description</h2>
+                <p className={`mt-3 max-w-3xl whitespace-pre-wrap text-[15px] leading-7 ${description ? "text-ink" : "text-mute"}`}>
+                  {description || "No description was stored with this ticket."}
+                </p>
+              </section>
+              <section data-tour="ticket-thread" aria-label="Conversation" className="border-t border-ink/10 px-6 py-6 sm:px-8 sm:py-7">
+                <h2 className="text-sm font-semibold">Conversation</h2>
+                <p className="mt-1 text-sm text-mute">Replies from service management appear here, and you can write back.</p>
+                <div className="mt-5">
+                  <EmailThread ticket={ticket} now={now} onSend={sendMessage} />
+                </div>
+              </section>
+            </div>
           </div>
         </article>
       </div>
